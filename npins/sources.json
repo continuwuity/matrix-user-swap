@@ -1,0 +1,38 @@
+{
+  "pins": {
+    "crane": {
+      "type": "GitRelease",
+      "repository": {
+        "type": "GitHub",
+        "owner": "ipetkov",
+        "repo": "crane"
+      },
+      "pre_releases": false,
+      "version_upper_bound": null,
+      "release_prefix": null,
+      "version": "v0.19.3",
+      "revision": "de4b20b7b4919e01b84d394bdc6313ea0b3923d9",
+      "url": "https://api.github.com/repos/ipetkov/crane/tarball/v0.19.3",
+      "hash": "0vy6ws4iy8hg10n1yz56aj31wwbw69k34m7fkq96qvdc2lc65f6g"
+    },
+    "fenix": {
+      "type": "Git",
+      "repository": {
+        "type": "GitHub",
+        "owner": "nix-community",
+        "repo": "fenix"
+      },
+      "branch": "main",
+      "revision": "7db16a01bca24b46acc1677f2b86ae03b5f207f8",
+      "url": "https://github.com/nix-community/fenix/archive/7db16a01bca24b46acc1677f2b86ae03b5f207f8.tar.gz",
+      "hash": "0ni6fw134ifvkd8vrgs6cm0818q7avcm9xijd1d7rrjpdq3svafy"
+    },
+    "nixpkgs": {
+      "type": "Channel",
+      "name": "nixpkgs-unstable",
+      "url": "https://releases.nixos.org/nixpkgs/nixpkgs-25.05pre709559.5083ec887760/nixexprs.tar.xz",
+      "hash": "1z912j1lmrg8zp2hpmmi69dls9zlpvqfvdkvh5xc3x6iqkqwn0cd"
+    }
+  },
+  "version": 3
+}

@@ -1,0 +1,93 @@
+interpreter = ["bash", "-euo", "pipefail", "-c"]
+
+[[task]]
+name = "engage"
+group = "versions"
+script = "engage --version"
+
+[[task]]
+name = "rustc"
+group = "versions"
+script = "rustc --version"
+
+[[task]]
+name = "cargo"
+group = "versions"
+script = "cargo --version"
+
+[[task]]
+name = "cargo-fmt"
+group = "versions"
+script = "cargo fmt --version"
+
+[[task]]
+name = "rustdoc"
+group = "versions"
+script = "rustdoc --version"
+
+[[task]]
+name = "cargo-clippy"
+group = "versions"
+script = "cargo clippy -- --version"
+
+[[task]]
+name = "nixfmt"
+group = "versions"
+script = "nixfmt --version"
+
+[[task]]
+name = "lychee"
+group = "versions"
+script = "lychee --version"
+
+[[task]]
+name = "markdownlint"
+group = "versions"
+script = "markdownlint --version"
+
+[[task]]
+name = "lychee"
+group = "lints"
+script = "lychee --offline ."
+
+[[task]]
+name = "markdownlint"
+group = "lints"
+script = "markdownlint . --ignore-path .gitignore"
+
+[[task]]
+name = "nixfmt"
+group = "lints"
+script = "nixfmt --width=80 --check ."
+
+[[task]]
+name = "cargo-fmt"
+group = "lints"
+script = "cargo fmt --check -- --color=always"
+
+[[task]]
+name = "cargo-doc"
+group = "lints"
+script = """
+RUSTDOCFLAGS="-D warnings" cargo doc \
+    --workspace \
+    --no-deps \
+    --color always
+"""
+
+[[task]]
+name = "cargo-clippy"
+group = "lints"
+script = "cargo clippy --workspace --all-targets --color=always -- -D warnings"
+
+[[task]]
+name = "cargo"
+group = "tests"
+script = """
+cargo test \
+    --workspace \
+    --all-targets \
+    --color=always \
+    -- \
+    --color=always
+"""
