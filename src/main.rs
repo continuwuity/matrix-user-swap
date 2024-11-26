@@ -12,7 +12,7 @@ use ruma::{
     events::StateEventType,
     OwnedRoomAliasId, OwnedRoomId, RoomId,
 };
-use serde::Deserialize;
+use serde::{de::DeserializeOwned, Deserialize};
 use thiserror::Error;
 use tracing::{self as t, level_filters::LevelFilter};
 use tracing_subscriber::{self, prelude::*};
@@ -73,12 +73,12 @@ enum GetStateError {
 }
 
 #[derive(Error, Debug)]
-enum GetRoomAliasError {
-    #[error("failed to get m.room.canonical_alias event from server")]
-    Request(#[source] RumaError),
+enum GetStateEventError {
+    #[error("failed to get {_0} event from server")]
+    Request(StateEventType, #[source] RumaError),
 
-    #[error("m.room.canonical_alias event did not match expected schema")]
-    Deserialize(#[source] serde_json::Error),
+    #[error("{_0} event did not match expected schema")]
+    Deserialize(StateEventType, #[source] serde_json::Error),
 }
 
 fn init_logging() -> Result<(), InitLoggingError> {
@@ -110,17 +110,19 @@ struct Plan {
     rooms: BTreeMap<OwnedRoomId, RoomPlan>,
 }
 
-async fn get_room_alias(
+async fn get_state_event<T: DeserializeOwned>(
     client: &Client,
     room_id: &RoomId,
-) -> Result<Option<OwnedRoomAliasId>, GetRoomAliasError> {
-    use GetRoomAliasError as Error;
+    kind: StateEventType,
+    state_key: String,
+) -> Result<Option<T>, GetStateEventError> {
+    use GetStateEventError as Error;
 
     let request =
         api::client::state::get_state_events_for_key::v3::Request::new(
             room_id.to_owned(),
-            StateEventType::RoomCanonicalAlias,
-            "".to_owned(),
+            kind.clone(),
+            state_key,
         );
     let response = client.send_request(request).await;
 
@@ -135,19 +137,32 @@ async fn get_room_alias(
         Err(client::Error::FromHttpResponse(
             FromHttpResponseError::Server(e),
         )) if e.status_code.as_u16() == 404 => return Ok(None),
-        Err(e) => return Err(Error::Request(e)),
+        Err(e) => return Err(Error::Request(kind, e)),
     };
 
+    let content = response
+        .content
+        .deserialize_as::<T>()
+        .map_err(|e| Error::Deserialize(kind, e))?;
+    Ok(Some(content))
+}
+
+async fn get_room_alias(
+    client: &Client,
+    room_id: &RoomId,
+) -> Result<Option<OwnedRoomAliasId>, GetStateEventError> {
     #[derive(Deserialize)]
-    struct ExtractAlias {
+    struct Extract {
         alias: Option<OwnedRoomAliasId>,
     }
-    match response.content.deserialize_as::<ExtractAlias>() {
-        Ok(ExtractAlias {
-            alias,
-        }) => Ok(alias),
-        Err(e) => Err(Error::Deserialize(e)),
-    }
+    let extract = get_state_event::<Extract>(
+        client,
+        room_id,
+        StateEventType::RoomCanonicalAlias,
+        "".to_owned(),
+    )
+    .await?;
+    Ok(extract.and_then(|extract| extract.alias))
 }
 
 async fn get_state(
