@@ -1,12 +1,17 @@
-use std::{collections::HashSet, process::ExitCode};
+use std::{
+    collections::{HashMap, HashSet},
+    process::ExitCode,
+};
 
 use clap::Parser;
 use derive_more::Display;
 use ruma::{
-    api,
+    api::{self, client::error::ErrorKind, error::FromHttpResponseError},
     client::{self, HttpClient},
-    OwnedRoomId,
+    events::StateEventType,
+    OwnedRoomAliasId, OwnedRoomId, RoomId,
 };
+use serde::Deserialize;
 use thiserror::Error;
 use tracing::{self as t, level_filters::LevelFilter};
 use tracing_subscriber::{self, prelude::*};
@@ -64,6 +69,18 @@ enum InitLoggingError {
 enum GetStateError {
     #[error("failed to get joined room list")]
     GetJoinedRooms(#[source] RumaError),
+
+    #[error("failed to get alias for room {_0}")]
+    GetRoomAlias(OwnedRoomId, #[source] GetRoomAliasError),
+}
+
+#[derive(Error, Debug)]
+enum GetRoomAliasError {
+    #[error("failed to get m.room.canonical_alias event from server")]
+    Request(#[source] RumaError),
+
+    #[error("m.room.canonical_alias event did not match expected schema")]
+    Deserialize(#[source] serde_json::Error),
 }
 
 fn init_logging() -> Result<(), InitLoggingError> {
@@ -78,8 +95,53 @@ fn init_logging() -> Result<(), InitLoggingError> {
     Ok(())
 }
 
+struct Room {
+    id: OwnedRoomId,
+    alias: Option<OwnedRoomAliasId>,
+}
+
 struct State {
-    joined_rooms: Vec<OwnedRoomId>,
+    joined_rooms: Vec<Room>,
+}
+
+async fn get_room_alias(
+    client: &Client,
+    room_id: &RoomId,
+) -> Result<Option<OwnedRoomAliasId>, GetRoomAliasError> {
+    use GetRoomAliasError as Error;
+
+    let request =
+        api::client::state::get_state_events_for_key::v3::Request::new(
+            room_id.to_owned(),
+            StateEventType::RoomCanonicalAlias,
+            "".to_owned(),
+        );
+    let response = client.send_request(request).await;
+
+    let response = match response {
+        Ok(response) => response,
+        // Spec says that "The room has no state with the given type or key."
+        // is 404, but does not specify a errcode, so this is the best we can
+        // do.
+        Err(e) if e.error_kind() == Some(&ErrorKind::NotFound) => {
+            return Ok(None)
+        }
+        Err(client::Error::FromHttpResponse(
+            FromHttpResponseError::Server(e),
+        )) if e.status_code.as_u16() == 404 => return Ok(None),
+        Err(e) => return Err(Error::Request(e)),
+    };
+
+    #[derive(Deserialize)]
+    struct ExtractAlias {
+        alias: Option<OwnedRoomAliasId>,
+    }
+    match response.content.deserialize_as::<ExtractAlias>() {
+        Ok(ExtractAlias {
+            alias,
+        }) => Ok(alias),
+        Err(e) => Err(Error::Deserialize(e)),
+    }
 }
 
 async fn get_state(
@@ -89,24 +151,51 @@ async fn get_state(
     use GetStateError as Error;
 
     t::info!("fetching state for {kind} user");
+
+    t::info!("fetching list of joined rooms");
     let response = client
         .send_request(api::client::membership::joined_rooms::v3::Request::new())
         .await
         .map_err(Error::GetJoinedRooms)?;
+    let room_ids = response.joined_rooms;
+
+    t::info!("fetching room aliases");
+    let mut aliases = HashMap::new();
+    for room_id in &room_ids {
+        let alias = get_room_alias(client, room_id)
+            .await
+            .map_err(|e| GetStateError::GetRoomAlias(room_id.to_owned(), e))?;
+        if let Some(alias) = alias {
+            aliases.insert(room_id, alias);
+        }
+    }
+
+    let joined_rooms = room_ids
+        .iter()
+        .map(|room_id| Room {
+            id: room_id.to_owned(),
+            alias: aliases.get(room_id).cloned(),
+        })
+        .collect();
     Ok(State {
-        joined_rooms: response.joined_rooms,
+        joined_rooms,
     })
 }
 
 fn diff_state(old: &State, new: &State) {
-    let new_rooms = new.joined_rooms.iter().collect::<HashSet<_>>();
+    let new_rooms =
+        new.joined_rooms.iter().map(|room| &room.id).collect::<HashSet<_>>();
 
     let to_join =
-        old.joined_rooms.iter().filter(|room_id| !new_rooms.contains(room_id));
+        old.joined_rooms.iter().filter(|room| !new_rooms.contains(&room.id));
 
     println!("Rooms to join:");
-    for room_id in to_join {
-        println!("  - {room_id}");
+    for room in to_join {
+        print!("  - {}", room.id);
+        if let Some(alias) = &room.alias {
+            print!(" ({alias})");
+        }
+        println!();
     }
 }
 
