@@ -76,3 +76,11 @@ verbose_file_reads = "warn"
 wildcard_dependencies = "warn"
 
 [dependencies]
+clap = { version = "4.5.21", features = ["derive", "wrap_help"] }
+derive_more = { version = "1.0.0", features = ["display"] }
+ruma = { version = "0.11.1", default_features = false, features = [ "client", "client-api-c", "client-ext-client-api", "client-reqwest-rustls-native-roots" ] }
+thiserror = "2.0.3"
+tokio = { version = "1.41.1", features = ["full"] }
+tracing = "0.1.40"
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+wee-woo = "0.1.0"
