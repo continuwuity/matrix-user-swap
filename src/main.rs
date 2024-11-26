@@ -1,5 +1,6 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashSet},
+    fmt,
     process::ExitCode,
 };
 
@@ -69,9 +70,6 @@ enum InitLoggingError {
 enum GetStateError {
     #[error("failed to get joined room list")]
     GetJoinedRooms(#[source] RumaError),
-
-    #[error("failed to get alias for room {_0}")]
-    GetRoomAlias(OwnedRoomId, #[source] GetRoomAliasError),
 }
 
 #[derive(Error, Debug)]
@@ -95,13 +93,21 @@ fn init_logging() -> Result<(), InitLoggingError> {
     Ok(())
 }
 
-struct Room {
-    id: OwnedRoomId,
-    alias: Option<OwnedRoomAliasId>,
+struct State {
+    joined_rooms: Vec<OwnedRoomId>,
 }
 
-struct State {
-    joined_rooms: Vec<Room>,
+struct StateDiff {
+    join_rooms: Vec<OwnedRoomId>,
+}
+
+struct RoomPlan {
+    alias: Option<OwnedRoomAliasId>,
+    join: bool,
+}
+
+struct Plan {
+    rooms: BTreeMap<OwnedRoomId, RoomPlan>,
 }
 
 async fn get_room_alias(
@@ -157,45 +163,71 @@ async fn get_state(
         .send_request(api::client::membership::joined_rooms::v3::Request::new())
         .await
         .map_err(Error::GetJoinedRooms)?;
-    let room_ids = response.joined_rooms;
+    let joined_rooms = response.joined_rooms;
 
-    t::info!("fetching room aliases");
-    let mut aliases = HashMap::new();
-    for room_id in &room_ids {
-        let alias = get_room_alias(client, room_id)
-            .await
-            .map_err(|e| GetStateError::GetRoomAlias(room_id.to_owned(), e))?;
-        if let Some(alias) = alias {
-            aliases.insert(room_id, alias);
-        }
-    }
-
-    let joined_rooms = room_ids
-        .iter()
-        .map(|room_id| Room {
-            id: room_id.to_owned(),
-            alias: aliases.get(room_id).cloned(),
-        })
-        .collect();
     Ok(State {
         joined_rooms,
     })
 }
 
-fn diff_state(old: &State, new: &State) {
-    let new_rooms =
-        new.joined_rooms.iter().map(|room| &room.id).collect::<HashSet<_>>();
-
-    let to_join =
-        old.joined_rooms.iter().filter(|room| !new_rooms.contains(&room.id));
-
-    println!("Rooms to join:");
-    for room in to_join {
-        print!("  - {}", room.id);
-        if let Some(alias) = &room.alias {
-            print!(" ({alias})");
+impl State {
+    fn diff_from(&self, other: &State) -> StateDiff {
+        let already_joined = other.joined_rooms.iter().collect::<HashSet<_>>();
+        StateDiff {
+            join_rooms: self
+                .joined_rooms
+                .iter()
+                .filter(|room_id| !already_joined.contains(room_id))
+                .cloned()
+                .collect(),
         }
-        println!();
+    }
+}
+
+impl StateDiff {
+    async fn to_plan(&self, client: &Client) -> Plan {
+        t::info!("fetching room aliases");
+
+        let mut rooms = BTreeMap::new();
+        for room_id in &self.join_rooms {
+            let alias = match get_room_alias(client, room_id).await {
+                Ok(alias) => alias,
+                Err(e) => {
+                    t::warn!("failed to get alias for room {room_id}:\n  {e}");
+                    None
+                }
+            };
+
+            rooms.insert(
+                room_id.to_owned(),
+                RoomPlan {
+                    alias,
+                    join: true,
+                },
+            );
+        }
+
+        Plan {
+            rooms,
+        }
+    }
+}
+
+impl fmt::Display for Plan {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        writeln!(f, "Rooms:")?;
+        for (id, room) in &self.rooms {
+            write!(f, "  - {id} (")?;
+            if room.join {
+                write!(f, "join")?;
+            }
+            write!(f, ")")?;
+            if let Some(alias) = &room.alias {
+                write!(f, " [{alias}]")?;
+            }
+            writeln!(f)?;
+        }
+        Ok(())
     }
 }
 
@@ -225,7 +257,9 @@ async fn try_main() -> Result<(), Error> {
         .await
         .map_err(|e| Error::GetState(UserKind::New, e))?;
 
-    diff_state(&old_state, &new_state);
+    let diff = old_state.diff_from(&new_state);
+    let plan = diff.to_plan(&old_client).await;
+    println!("{plan}");
 
     Ok(())
 }
