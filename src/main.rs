@@ -10,7 +10,7 @@ use ruma::{
     api::{self, client::error::ErrorKind, error::FromHttpResponseError},
     client::{self, HttpClient},
     events::{room::member::MembershipState, StateEventType},
-    OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomId,
+    OwnedRoomAliasId, OwnedRoomId, UserId, OwnedUserId, RoomId,
 };
 use serde::{de::DeserializeOwned, Deserialize};
 use thiserror::Error;
@@ -88,6 +88,9 @@ enum GetStateEventError {
 enum MakePlanError {
     #[error("failed to get joined room list for {_0} user")]
     GetJoinedRooms(UserKind, #[source] RumaError),
+
+    #[error("failed to get new user membership state in room {_0}")]
+    GetMembership(OwnedRoomId, #[source] GetStateEventError),
 }
 
 fn init_logging() -> Result<(), InitLoggingError> {
@@ -194,6 +197,7 @@ impl User {
     async fn get_membership(
         &self,
         room_id: &RoomId,
+        user_id: &UserId,
     ) -> Result<Option<MembershipState>, GetStateEventError> {
         #[derive(Deserialize)]
         struct Extract {
@@ -203,7 +207,7 @@ impl User {
             .get_state_event::<Extract>(
                 room_id,
                 StateEventType::RoomMember,
-                self.user_id.as_str().to_owned(),
+                user_id.as_str().to_owned(),
             )
             .await?;
         Ok(extract.map(|extract| extract.membership))
@@ -218,6 +222,7 @@ impl User {
 
 struct RoomPlan {
     alias: Option<OwnedRoomAliasId>,
+    invite: bool,
     join: bool,
 }
 
@@ -257,10 +262,23 @@ async fn make_plan(old: &User, new: &User) -> Result<Plan, MakePlanError> {
             }
         };
 
+        let membership = old
+            .get_membership(&room_id, &new.user_id)
+            .await
+            .map_err(|e| Error::GetMembership(room_id.clone(), e))?
+            .unwrap_or(MembershipState::Leave);
+        let invite = match membership {
+            MembershipState::Invite => false,
+            // New user joined in between fetching the joined user list and now
+            MembershipState::Join => continue,
+            _ => true
+        };
+
         rooms.insert(
             room_id.to_owned(),
             RoomPlan {
                 alias,
+                invite,
                 join: true,
             },
         );
@@ -276,6 +294,9 @@ impl fmt::Display for Plan {
         writeln!(f, "Rooms:")?;
         for (id, room) in &self.rooms {
             write!(f, "  - {id} (")?;
+            if room.invite {
+                write!(f, "invite,")?;
+            }
             if room.join {
                 write!(f, "join")?;
             }
