@@ -33,7 +33,7 @@ struct Cli {
     new_hs_url: String,
 }
 
-#[derive(Debug, Display)]
+#[derive(Debug, Display, Copy, Clone)]
 enum UserKind {
     #[display("old")]
     Old,
@@ -93,6 +93,107 @@ fn init_logging() -> Result<(), InitLoggingError> {
     Ok(())
 }
 
+struct User {
+    kind: UserKind,
+    client: Client,
+}
+
+impl User {
+    async fn new(
+        kind: UserKind,
+        hs_url: String,
+        access_token: String,
+        http_client: client::http_client::Reqwest,
+    ) -> Result<User, Error> {
+        let client = client::Client::builder()
+            .access_token(Some(access_token))
+            .homeserver_url(hs_url)
+            .http_client(http_client.clone())
+            .await
+            .map_err(|e| Error::InitClient(kind, e))?;
+
+        Ok(User {
+            kind,
+            client,
+        })
+    }
+
+    async fn get_state_event<T: DeserializeOwned>(
+        &self,
+        room_id: &RoomId,
+        kind: StateEventType,
+        state_key: String,
+    ) -> Result<Option<T>, GetStateEventError> {
+        use GetStateEventError as Error;
+
+        let request =
+            api::client::state::get_state_events_for_key::v3::Request::new(
+                room_id.to_owned(),
+                kind.clone(),
+                state_key,
+            );
+        let response = self.client.send_request(request).await;
+
+        let response = match response {
+            Ok(response) => response,
+            // Spec says that "The room has no state with the given type or
+            // key." is 404, but does not specify a errcode, so this
+            // is the best we can do.
+            Err(e) if e.error_kind() == Some(&ErrorKind::NotFound) => {
+                return Ok(None)
+            }
+            Err(client::Error::FromHttpResponse(
+                FromHttpResponseError::Server(e),
+            )) if e.status_code.as_u16() == 404 => return Ok(None),
+            Err(e) => return Err(Error::Request(kind, e)),
+        };
+
+        let content = response
+            .content
+            .deserialize_as::<T>()
+            .map_err(|e| Error::Deserialize(kind, e))?;
+        Ok(Some(content))
+    }
+
+    async fn get_room_alias(
+        &self,
+        room_id: &RoomId,
+    ) -> Result<Option<OwnedRoomAliasId>, GetStateEventError> {
+        #[derive(Deserialize)]
+        struct Extract {
+            alias: Option<OwnedRoomAliasId>,
+        }
+        let extract = self
+            .get_state_event::<Extract>(
+                room_id,
+                StateEventType::RoomCanonicalAlias,
+                "".to_owned(),
+            )
+            .await?;
+        Ok(extract.and_then(|extract| extract.alias))
+    }
+
+    async fn get_state(&self) -> Result<State, GetStateError> {
+        use GetStateError as Error;
+
+        t::info!("fetching state for {} user", self.kind);
+
+        t::info!("fetching list of joined rooms");
+        let response = self
+            .client
+            .send_request(
+                api::client::membership::joined_rooms::v3::Request::new(),
+            )
+            .await
+            .map_err(Error::GetJoinedRooms)?;
+        let joined_rooms = response.joined_rooms;
+
+        Ok(State {
+            joined_rooms,
+        })
+    }
+}
+
 struct State {
     joined_rooms: Vec<OwnedRoomId>,
 }
@@ -110,81 +211,6 @@ struct Plan {
     rooms: BTreeMap<OwnedRoomId, RoomPlan>,
 }
 
-async fn get_state_event<T: DeserializeOwned>(
-    client: &Client,
-    room_id: &RoomId,
-    kind: StateEventType,
-    state_key: String,
-) -> Result<Option<T>, GetStateEventError> {
-    use GetStateEventError as Error;
-
-    let request =
-        api::client::state::get_state_events_for_key::v3::Request::new(
-            room_id.to_owned(),
-            kind.clone(),
-            state_key,
-        );
-    let response = client.send_request(request).await;
-
-    let response = match response {
-        Ok(response) => response,
-        // Spec says that "The room has no state with the given type or key."
-        // is 404, but does not specify a errcode, so this is the best we can
-        // do.
-        Err(e) if e.error_kind() == Some(&ErrorKind::NotFound) => {
-            return Ok(None)
-        }
-        Err(client::Error::FromHttpResponse(
-            FromHttpResponseError::Server(e),
-        )) if e.status_code.as_u16() == 404 => return Ok(None),
-        Err(e) => return Err(Error::Request(kind, e)),
-    };
-
-    let content = response
-        .content
-        .deserialize_as::<T>()
-        .map_err(|e| Error::Deserialize(kind, e))?;
-    Ok(Some(content))
-}
-
-async fn get_room_alias(
-    client: &Client,
-    room_id: &RoomId,
-) -> Result<Option<OwnedRoomAliasId>, GetStateEventError> {
-    #[derive(Deserialize)]
-    struct Extract {
-        alias: Option<OwnedRoomAliasId>,
-    }
-    let extract = get_state_event::<Extract>(
-        client,
-        room_id,
-        StateEventType::RoomCanonicalAlias,
-        "".to_owned(),
-    )
-    .await?;
-    Ok(extract.and_then(|extract| extract.alias))
-}
-
-async fn get_state(
-    kind: UserKind,
-    client: &Client,
-) -> Result<State, GetStateError> {
-    use GetStateError as Error;
-
-    t::info!("fetching state for {kind} user");
-
-    t::info!("fetching list of joined rooms");
-    let response = client
-        .send_request(api::client::membership::joined_rooms::v3::Request::new())
-        .await
-        .map_err(Error::GetJoinedRooms)?;
-    let joined_rooms = response.joined_rooms;
-
-    Ok(State {
-        joined_rooms,
-    })
-}
-
 impl State {
     fn diff_from(&self, other: &State) -> StateDiff {
         let already_joined = other.joined_rooms.iter().collect::<HashSet<_>>();
@@ -200,12 +226,12 @@ impl State {
 }
 
 impl StateDiff {
-    async fn to_plan(&self, client: &Client) -> Plan {
+    async fn to_plan(&self, user: &User) -> Plan {
         t::info!("fetching room aliases");
 
         let mut rooms = BTreeMap::new();
         for room_id in &self.join_rooms {
-            let alias = match get_room_alias(client, room_id).await {
+            let alias = match user.get_room_alias(room_id).await {
                 Ok(alias) => alias,
                 Err(e) => {
                     t::warn!("failed to get alias for room {room_id}:\n  {e}");
@@ -252,28 +278,32 @@ async fn try_main() -> Result<(), Error> {
 
     let http_client = client::http_client::Reqwest::new();
 
-    let old_client = client::Client::builder()
-        .access_token(Some(cli.old_access_token))
-        .homeserver_url(cli.old_hs_url)
-        .http_client(http_client.clone())
-        .await
-        .map_err(|e| Error::InitClient(UserKind::Old, e))?;
-    let new_client = client::Client::builder()
-        .access_token(Some(cli.new_access_token))
-        .homeserver_url(cli.new_hs_url)
-        .http_client(http_client)
-        .await
-        .map_err(|e| Error::InitClient(UserKind::New, e))?;
+    let old_user = User::new(
+        UserKind::Old,
+        cli.old_hs_url,
+        cli.old_access_token,
+        http_client.clone(),
+    )
+    .await?;
+    let new_user = User::new(
+        UserKind::New,
+        cli.new_hs_url,
+        cli.new_access_token,
+        http_client,
+    )
+    .await?;
 
-    let old_state = get_state(UserKind::Old, &old_client)
+    let old_state = old_user
+        .get_state()
         .await
         .map_err(|e| Error::GetState(UserKind::Old, e))?;
-    let new_state = get_state(UserKind::New, &new_client)
+    let new_state = new_user
+        .get_state()
         .await
         .map_err(|e| Error::GetState(UserKind::New, e))?;
 
     let diff = old_state.diff_from(&new_state);
-    let plan = diff.to_plan(&old_client).await;
+    let plan = diff.to_plan(&old_user).await;
     println!("{plan}");
 
     Ok(())
