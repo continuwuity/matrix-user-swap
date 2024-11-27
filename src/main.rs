@@ -209,20 +209,20 @@ impl User {
         Ok(extract.map(|extract| extract.membership))
     }
 
+    async fn get_joined_rooms(&self) -> Result<Vec<OwnedRoomId>, RumaError> {
+        let request = api::client::membership::joined_rooms::v3::Request::new();
+        let response = self.client.send_request(request).await?;
+        Ok(response.joined_rooms)
+    }
+
     async fn get_state(&self) -> Result<State, GetStateError> {
         use GetStateError as Error;
 
         t::info!("fetching state for {} user", self.kind);
 
         t::info!("fetching list of joined rooms");
-        let response = self
-            .client
-            .send_request(
-                api::client::membership::joined_rooms::v3::Request::new(),
-            )
-            .await
-            .map_err(Error::GetJoinedRooms)?;
-        let joined_rooms = response.joined_rooms;
+        let joined_rooms =
+            self.get_joined_rooms().await.map_err(Error::GetJoinedRooms)?;
 
         Ok(State {
             joined_rooms,
