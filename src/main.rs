@@ -10,7 +10,7 @@ use ruma::{
     api::{self, client::error::ErrorKind, error::FromHttpResponseError},
     client::{self, HttpClient},
     events::StateEventType,
-    OwnedRoomAliasId, OwnedRoomId, RoomId,
+    OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomId,
 };
 use serde::{de::DeserializeOwned, Deserialize};
 use thiserror::Error;
@@ -51,8 +51,8 @@ enum Error {
     #[error("failed to initialize logging")]
     InitLogging(#[from] InitLoggingError),
 
-    #[error("failed to initialize matrix client for {_0} user")]
-    InitClient(UserKind, #[source] RumaError),
+    #[error("failed to initialize {_0} user")]
+    InitUser(UserKind, #[source] InitUserError),
 
     #[error("failed to get state for {_0} user")]
     GetState(UserKind, #[source] GetStateError),
@@ -64,6 +64,15 @@ enum InitLoggingError {
         "failed to parse filter from MATRIX_USER_SWAP_LOG environment variable"
     )]
     ParseEnvFilter(#[from] tracing_subscriber::filter::FromEnvError),
+}
+
+#[derive(Error, Debug)]
+enum InitUserError {
+    #[error("failed to initialize matrix client")]
+    InitClient(#[source] RumaError),
+
+    #[error("failed to get user id")]
+    GetUserId(#[source] RumaError),
 }
 
 #[derive(Error, Debug)]
@@ -95,6 +104,7 @@ fn init_logging() -> Result<(), InitLoggingError> {
 
 struct User {
     kind: UserKind,
+    user_id: OwnedUserId,
     client: Client,
 }
 
@@ -104,16 +114,24 @@ impl User {
         hs_url: String,
         access_token: String,
         http_client: client::http_client::Reqwest,
-    ) -> Result<User, Error> {
+    ) -> Result<User, InitUserError> {
+        use InitUserError as Error;
+
         let client = client::Client::builder()
             .access_token(Some(access_token))
             .homeserver_url(hs_url)
             .http_client(http_client.clone())
             .await
-            .map_err(|e| Error::InitClient(kind, e))?;
+            .map_err(Error::InitClient)?;
+
+        let request = api::client::account::whoami::v3::Request::new();
+        let response =
+            client.send_request(request).await.map_err(Error::GetUserId)?;
+        let user_id = response.user_id;
 
         Ok(User {
             kind,
+            user_id,
             client,
         })
     }
@@ -284,14 +302,16 @@ async fn try_main() -> Result<(), Error> {
         cli.old_access_token,
         http_client.clone(),
     )
-    .await?;
+    .await
+    .map_err(|e| Error::InitUser(UserKind::Old, e))?;
     let new_user = User::new(
         UserKind::New,
         cli.new_hs_url,
         cli.new_access_token,
         http_client,
     )
-    .await?;
+    .await
+    .map_err(|e| Error::InitUser(UserKind::New, e))?;
 
     let old_state = old_user
         .get_state()
