@@ -54,8 +54,8 @@ enum Error {
     #[error("failed to initialize {_0} user")]
     InitUser(UserKind, #[source] InitUserError),
 
-    #[error("failed to get state for {_0} user")]
-    GetState(UserKind, #[source] GetStateError),
+    #[error("failed to compute migration plan")]
+    MakePlan(#[from] MakePlanError),
 }
 
 #[derive(Error, Debug)]
@@ -76,18 +76,18 @@ enum InitUserError {
 }
 
 #[derive(Error, Debug)]
-enum GetStateError {
-    #[error("failed to get joined room list")]
-    GetJoinedRooms(#[source] RumaError),
-}
-
-#[derive(Error, Debug)]
 enum GetStateEventError {
     #[error("failed to get {_0} event from server")]
     Request(StateEventType, #[source] RumaError),
 
     #[error("{_0} event did not match expected schema")]
     Deserialize(StateEventType, #[source] serde_json::Error),
+}
+
+#[derive(Error, Debug)]
+enum MakePlanError {
+    #[error("failed to get joined room list for {_0} user")]
+    GetJoinedRooms(UserKind, #[source] RumaError),
 }
 
 fn init_logging() -> Result<(), InitLoggingError> {
@@ -214,28 +214,6 @@ impl User {
         let response = self.client.send_request(request).await?;
         Ok(response.joined_rooms)
     }
-
-    async fn get_state(&self) -> Result<State, GetStateError> {
-        use GetStateError as Error;
-
-        t::info!("fetching state for {} user", self.kind);
-
-        t::info!("fetching list of joined rooms");
-        let joined_rooms =
-            self.get_joined_rooms().await.map_err(Error::GetJoinedRooms)?;
-
-        Ok(State {
-            joined_rooms,
-        })
-    }
-}
-
-struct State {
-    joined_rooms: Vec<OwnedRoomId>,
-}
-
-struct StateDiff {
-    join_rooms: Vec<OwnedRoomId>,
 }
 
 struct RoomPlan {
@@ -247,47 +225,50 @@ struct Plan {
     rooms: BTreeMap<OwnedRoomId, RoomPlan>,
 }
 
-impl State {
-    fn diff_from(&self, other: &State) -> StateDiff {
-        let already_joined = other.joined_rooms.iter().collect::<HashSet<_>>();
-        StateDiff {
-            join_rooms: self
-                .joined_rooms
-                .iter()
-                .filter(|room_id| !already_joined.contains(room_id))
-                .cloned()
-                .collect(),
-        }
+async fn make_plan(old: &User, new: &User) -> Result<Plan, MakePlanError> {
+    use MakePlanError as Error;
+
+    t::info!("fetching joined rooms for old user");
+    let old_joined_rooms = old
+        .get_joined_rooms()
+        .await
+        .map_err(|e| Error::GetJoinedRooms(UserKind::Old, e))?;
+
+    t::info!("fetching joined rooms for new user");
+    let new_joined_rooms = new
+        .get_joined_rooms()
+        .await
+        .map_err(|e| Error::GetJoinedRooms(UserKind::New, e))?;
+
+    let new_joined_rooms = new_joined_rooms.into_iter().collect::<HashSet<_>>();
+    let to_join = old_joined_rooms
+        .into_iter()
+        .filter(|room_id| !new_joined_rooms.contains(room_id))
+        .collect::<Vec<_>>();
+    t::info!("need to join {} rooms", to_join.len());
+
+    let mut rooms = BTreeMap::new();
+    for room_id in to_join {
+        let alias = match old.get_room_alias(&room_id).await {
+            Ok(alias) => alias,
+            Err(e) => {
+                t::warn!("failed to get alias for room {room_id}:\n  {e}");
+                None
+            }
+        };
+
+        rooms.insert(
+            room_id.to_owned(),
+            RoomPlan {
+                alias,
+                join: true,
+            },
+        );
     }
-}
 
-impl StateDiff {
-    async fn to_plan(&self, user: &User) -> Plan {
-        t::info!("fetching room aliases");
-
-        let mut rooms = BTreeMap::new();
-        for room_id in &self.join_rooms {
-            let alias = match user.get_room_alias(room_id).await {
-                Ok(alias) => alias,
-                Err(e) => {
-                    t::warn!("failed to get alias for room {room_id}:\n  {e}");
-                    None
-                }
-            };
-
-            rooms.insert(
-                room_id.to_owned(),
-                RoomPlan {
-                    alias,
-                    join: true,
-                },
-            );
-        }
-
-        Plan {
-            rooms,
-        }
-    }
+    Ok(Plan {
+        rooms,
+    })
 }
 
 impl fmt::Display for Plan {
@@ -331,17 +312,7 @@ async fn try_main() -> Result<(), Error> {
     .await
     .map_err(|e| Error::InitUser(UserKind::New, e))?;
 
-    let old_state = old_user
-        .get_state()
-        .await
-        .map_err(|e| Error::GetState(UserKind::Old, e))?;
-    let new_state = new_user
-        .get_state()
-        .await
-        .map_err(|e| Error::GetState(UserKind::New, e))?;
-
-    let diff = old_state.diff_from(&new_state);
-    let plan = diff.to_plan(&old_user).await;
+    let plan = make_plan(&old_user, &new_user).await?;
     println!("{plan}");
 
     Ok(())
