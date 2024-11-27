@@ -9,7 +9,7 @@ use derive_more::Display;
 use ruma::{
     api::{self, client::error::ErrorKind, error::FromHttpResponseError},
     client::{self, HttpClient},
-    events::StateEventType,
+    events::{room::member::MembershipState, StateEventType},
     OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomId,
 };
 use serde::{de::DeserializeOwned, Deserialize};
@@ -189,6 +189,24 @@ impl User {
             )
             .await?;
         Ok(extract.and_then(|extract| extract.alias))
+    }
+
+    async fn get_membership(
+        &self,
+        room_id: &RoomId,
+    ) -> Result<Option<MembershipState>, GetStateEventError> {
+        #[derive(Deserialize)]
+        struct Extract {
+            membership: MembershipState,
+        }
+        let extract = self
+            .get_state_event::<Extract>(
+                room_id,
+                StateEventType::RoomMember,
+                self.user_id.as_str().to_owned(),
+            )
+            .await?;
+        Ok(extract.map(|extract| extract.membership))
     }
 
     async fn get_state(&self) -> Result<State, GetStateError> {
