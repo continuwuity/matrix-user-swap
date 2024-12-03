@@ -78,7 +78,7 @@ wildcard_dependencies = "warn"
 [dependencies]
 clap = { version = "4.5.21", features = ["derive", "wrap_help"] }
 derive_more = { version = "1.0.0", features = ["display"] }
-ruma = { version = "0.11.1", default_features = false, features = [ "client", "client-api-c", "client-ext-client-api", "client-reqwest-rustls-native-roots" ] }
+ruma = { version = "0.11.1", default-features = false, features = [ "client", "client-api-c", "client-ext-client-api", "client-reqwest-rustls-native-roots" ] }
 serde = { version = "1.0.215", features = ["derive"] }
 serde_json = "1.0.133"
 thiserror = "2.0.3"
