@@ -9,8 +9,17 @@ use derive_more::Display;
 use ruma::{
     api::{self, client::error::ErrorKind, error::FromHttpResponseError},
     client::{self, HttpClient},
-    events::{room::member::MembershipState, StateEventType},
-    OwnedRoomAliasId, OwnedRoomId, UserId, OwnedUserId, RoomId,
+    events::{
+        room::{
+            member::MembershipState,
+            power_levels::{
+                RedactedRoomPowerLevelsEventContent, RoomPowerLevels,
+                RoomPowerLevelsEventContent,
+            },
+        },
+        StateEventType,
+    },
+    OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomId, UserId,
 };
 use serde::{de::DeserializeOwned, Deserialize};
 use thiserror::Error;
@@ -85,12 +94,16 @@ enum GetStateEventError {
 }
 
 #[derive(Error, Debug)]
+#[allow(clippy::enum_variant_names)]
 enum MakePlanError {
     #[error("failed to get joined room list for {_0} user")]
     GetJoinedRooms(UserKind, #[source] RumaError),
 
     #[error("failed to get new user membership state in room {_0}")]
     GetMembership(OwnedRoomId, #[source] GetStateEventError),
+
+    #[error("failed to get power levels state room {_0}")]
+    GetPowerLevels(OwnedRoomId, #[source] GetStateEventError),
 }
 
 fn init_logging() -> Result<(), InitLoggingError> {
@@ -213,6 +226,26 @@ impl User {
         Ok(extract.map(|extract| extract.membership))
     }
 
+    async fn get_power_levels(
+        &self,
+        room_id: &RoomId,
+    ) -> Result<RoomPowerLevels, GetStateEventError> {
+        // We only care about the keys that are preserved on redaction, so just
+        // deserialize to the redacted type. Redactable fields will be dropped.
+        let content = self
+            .get_state_event::<RedactedRoomPowerLevelsEventContent>(
+                room_id,
+                StateEventType::RoomPowerLevels,
+                "".to_owned(),
+            )
+            .await?;
+        if let Some(content) = content {
+            Ok(content.into())
+        } else {
+            Ok(RoomPowerLevelsEventContent::default().into())
+        }
+    }
+
     async fn get_joined_rooms(&self) -> Result<Vec<OwnedRoomId>, RumaError> {
         let request = api::client::membership::joined_rooms::v3::Request::new();
         let response = self.client.send_request(request).await?;
@@ -261,6 +294,11 @@ async fn make_plan(old: &User, new: &User) -> Result<Plan, MakePlanError> {
                 None
             }
         };
+        let room_str = if let Some(alias) = &alias {
+            &format!("{room_id} ({alias})")
+        } else {
+            room_id.as_str()
+        };
 
         let membership = old
             .get_membership(&room_id, &new.user_id)
@@ -271,8 +309,24 @@ async fn make_plan(old: &User, new: &User) -> Result<Plan, MakePlanError> {
             MembershipState::Invite => false,
             // New user joined in between fetching the joined user list and now
             MembershipState::Join => continue,
-            _ => true
+            _ => true,
         };
+
+        if invite {
+            let power_levels = old
+                .get_power_levels(&room_id)
+                .await
+                .map_err(|e| Error::GetPowerLevels(room_id.clone(), e))?;
+            let can_invite = power_levels.user_can_invite(&old.user_id);
+
+            if !can_invite {
+                t::warn!(
+                    "old user does not have permissions to invite new user to \
+                     {room_str}"
+                );
+                continue;
+            }
+        }
 
         rooms.insert(
             room_id.to_owned(),
