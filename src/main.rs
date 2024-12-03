@@ -11,6 +11,7 @@ use ruma::{
     client::{self, HttpClient},
     events::{
         room::{
+            join_rules::{JoinRule, RoomJoinRulesEventContent},
             member::MembershipState,
             power_levels::{
                 RedactedRoomPowerLevelsEventContent, RoomPowerLevels,
@@ -98,6 +99,9 @@ enum GetStateEventError {
 enum MakePlanError {
     #[error("failed to get joined room list for {_0} user")]
     GetJoinedRooms(UserKind, #[source] RumaError),
+
+    #[error("failed to get join rules for room {_0}")]
+    GetJoinRule(OwnedRoomId, #[source] GetStateEventError),
 
     #[error("failed to get new user membership state in room {_0}")]
     GetMembership(OwnedRoomId, #[source] GetStateEventError),
@@ -246,6 +250,20 @@ impl User {
         }
     }
 
+    async fn get_join_rule(
+        &self,
+        room_id: &RoomId,
+    ) -> Result<Option<JoinRule>, GetStateEventError> {
+        let content = self
+            .get_state_event::<RoomJoinRulesEventContent>(
+                room_id,
+                StateEventType::RoomJoinRules,
+                "".to_owned(),
+            )
+            .await?;
+        Ok(content.map(|content| content.join_rule))
+    }
+
     async fn get_joined_rooms(&self) -> Result<Vec<OwnedRoomId>, RumaError> {
         let request = api::client::membership::joined_rooms::v3::Request::new();
         let response = self.client.send_request(request).await?;
@@ -305,14 +323,24 @@ async fn make_plan(old: &User, new: &User) -> Result<Plan, MakePlanError> {
             .await
             .map_err(|e| Error::GetMembership(room_id.clone(), e))?
             .unwrap_or(MembershipState::Leave);
-        let invite = match membership {
-            MembershipState::Invite => false,
+        let invited = match membership {
+            MembershipState::Invite => true,
             // New user joined in between fetching the joined user list and now
             MembershipState::Join => continue,
-            _ => true,
+            _ => false,
         };
 
-        if invite {
+        let join_rule = old
+            .get_join_rule(&room_id)
+            .await
+            .map_err(|e| Error::GetJoinRule(room_id.clone(), e))?;
+
+        // TODO: handle 'allow' field of 'm.room.join_rules', which could allow
+        // us to skip invites.
+        let need_invite =
+            !invited && !matches!(join_rule, Some(JoinRule::Public));
+
+        if need_invite {
             let power_levels = old
                 .get_power_levels(&room_id)
                 .await
@@ -332,7 +360,7 @@ async fn make_plan(old: &User, new: &User) -> Result<Plan, MakePlanError> {
             room_id.to_owned(),
             RoomPlan {
                 alias,
-                invite,
+                invite: need_invite,
                 join: true,
             },
         );
