@@ -1,32 +1,19 @@
-use std::{
-    collections::{BTreeMap, HashSet},
-    fmt,
-    process::ExitCode,
-};
+use std::process::ExitCode;
 
 use clap::Parser;
-use derive_more::Display;
-use ruma::{
-    api::{self, client::error::ErrorKind, error::FromHttpResponseError},
-    client::{self, HttpClient},
-    events::{
-        room::{
-            join_rules::{JoinRule, RoomJoinRulesEventContent},
-            member::MembershipState,
-            power_levels::{
-                RedactedRoomPowerLevelsEventContent, RoomPowerLevels,
-                RoomPowerLevelsEventContent,
-            },
-        },
-        StateEventType,
-    },
-    Int, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomId, UserId,
-};
-use serde::{de::DeserializeOwned, Deserialize};
+use ruma::client::{self};
 use thiserror::Error;
-use tracing::{self as t, level_filters::LevelFilter};
+use tracing::level_filters::LevelFilter;
 use tracing_subscriber::{self, prelude::*};
 use wee_woo::ErrorExt;
+
+mod plan;
+mod user;
+
+use crate::{
+    plan::{make_plan, MakePlanError},
+    user::{InitUserError, User, UserKind},
+};
 
 // TODO: support server discovery from userid
 // TODO: support password auth
@@ -42,19 +29,6 @@ struct Cli {
     #[clap(long)]
     new_hs_url: String,
 }
-
-#[derive(Debug, Display, Copy, Clone)]
-enum UserKind {
-    #[display("old")]
-    Old,
-    #[display("new")]
-    New,
-}
-
-type Client = client::Client<client::http_client::Reqwest>;
-
-type ReqwestError = <client::http_client::Reqwest as HttpClient>::Error;
-type RumaError = client::Error<ReqwestError, api::client::Error>;
 
 #[derive(Error, Debug)]
 enum Error {
@@ -76,40 +50,6 @@ enum InitLoggingError {
     ParseEnvFilter(#[from] tracing_subscriber::filter::FromEnvError),
 }
 
-#[derive(Error, Debug)]
-enum InitUserError {
-    #[error("failed to initialize matrix client")]
-    InitClient(#[source] RumaError),
-
-    #[error("failed to get user id")]
-    GetUserId(#[source] RumaError),
-}
-
-#[derive(Error, Debug)]
-enum GetStateEventError {
-    #[error("failed to get {_0} event from server")]
-    Request(StateEventType, #[source] RumaError),
-
-    #[error("{_0} event did not match expected schema")]
-    Deserialize(StateEventType, #[source] serde_json::Error),
-}
-
-#[derive(Error, Debug)]
-#[allow(clippy::enum_variant_names)]
-enum MakePlanError {
-    #[error("failed to get joined room list for {_0} user")]
-    GetJoinedRooms(UserKind, #[source] RumaError),
-
-    #[error("failed to get join rules for room {_0}")]
-    GetJoinRule(OwnedRoomId, #[source] GetStateEventError),
-
-    #[error("failed to get new user membership state in room {_0}")]
-    GetMembership(OwnedRoomId, #[source] GetStateEventError),
-
-    #[error("failed to get power levels state room {_0}")]
-    GetPowerLevels(OwnedRoomId, #[source] GetStateEventError),
-}
-
 fn init_logging() -> Result<(), InitLoggingError> {
     let env_filter = tracing_subscriber::EnvFilter::builder()
         .with_default_directive(LevelFilter::INFO.into())
@@ -120,300 +60,6 @@ fn init_logging() -> Result<(), InitLoggingError> {
         .with(env_filter)
         .init();
     Ok(())
-}
-
-struct User {
-    kind: UserKind,
-    user_id: OwnedUserId,
-    client: Client,
-}
-
-impl User {
-    async fn new(
-        kind: UserKind,
-        hs_url: String,
-        access_token: String,
-        http_client: client::http_client::Reqwest,
-    ) -> Result<User, InitUserError> {
-        use InitUserError as Error;
-
-        let client = client::Client::builder()
-            .access_token(Some(access_token))
-            .homeserver_url(hs_url)
-            .http_client(http_client.clone())
-            .await
-            .map_err(Error::InitClient)?;
-
-        let request = api::client::account::whoami::v3::Request::new();
-        let response =
-            client.send_request(request).await.map_err(Error::GetUserId)?;
-        let user_id = response.user_id;
-
-        Ok(User {
-            kind,
-            user_id,
-            client,
-        })
-    }
-
-    async fn get_state_event<T: DeserializeOwned>(
-        &self,
-        room_id: &RoomId,
-        kind: StateEventType,
-        state_key: String,
-    ) -> Result<Option<T>, GetStateEventError> {
-        use GetStateEventError as Error;
-
-        let request =
-            api::client::state::get_state_events_for_key::v3::Request::new(
-                room_id.to_owned(),
-                kind.clone(),
-                state_key,
-            );
-        let response = self.client.send_request(request).await;
-
-        let response = match response {
-            Ok(response) => response,
-            // Spec says that "The room has no state with the given type or
-            // key." is 404, but does not specify a errcode, so this
-            // is the best we can do.
-            Err(e) if e.error_kind() == Some(&ErrorKind::NotFound) => {
-                return Ok(None)
-            }
-            Err(client::Error::FromHttpResponse(
-                FromHttpResponseError::Server(e),
-            )) if e.status_code.as_u16() == 404 => return Ok(None),
-            Err(e) => return Err(Error::Request(kind, e)),
-        };
-
-        let content = response
-            .content
-            .deserialize_as::<T>()
-            .map_err(|e| Error::Deserialize(kind, e))?;
-        Ok(Some(content))
-    }
-
-    async fn get_room_alias(
-        &self,
-        room_id: &RoomId,
-    ) -> Result<Option<OwnedRoomAliasId>, GetStateEventError> {
-        #[derive(Deserialize)]
-        struct Extract {
-            alias: Option<OwnedRoomAliasId>,
-        }
-        let extract = self
-            .get_state_event::<Extract>(
-                room_id,
-                StateEventType::RoomCanonicalAlias,
-                "".to_owned(),
-            )
-            .await?;
-        Ok(extract.and_then(|extract| extract.alias))
-    }
-
-    async fn get_membership(
-        &self,
-        room_id: &RoomId,
-        user_id: &UserId,
-    ) -> Result<Option<MembershipState>, GetStateEventError> {
-        #[derive(Deserialize)]
-        struct Extract {
-            membership: MembershipState,
-        }
-        let extract = self
-            .get_state_event::<Extract>(
-                room_id,
-                StateEventType::RoomMember,
-                user_id.as_str().to_owned(),
-            )
-            .await?;
-        Ok(extract.map(|extract| extract.membership))
-    }
-
-    async fn get_power_levels(
-        &self,
-        room_id: &RoomId,
-    ) -> Result<RoomPowerLevels, GetStateEventError> {
-        // We only care about the keys that are preserved on redaction, so just
-        // deserialize to the redacted type. Redactable fields will be dropped.
-        let content = self
-            .get_state_event::<RedactedRoomPowerLevelsEventContent>(
-                room_id,
-                StateEventType::RoomPowerLevels,
-                "".to_owned(),
-            )
-            .await?;
-        if let Some(content) = content {
-            Ok(content.into())
-        } else {
-            Ok(RoomPowerLevelsEventContent::default().into())
-        }
-    }
-
-    async fn get_join_rule(
-        &self,
-        room_id: &RoomId,
-    ) -> Result<Option<JoinRule>, GetStateEventError> {
-        let content = self
-            .get_state_event::<RoomJoinRulesEventContent>(
-                room_id,
-                StateEventType::RoomJoinRules,
-                "".to_owned(),
-            )
-            .await?;
-        Ok(content.map(|content| content.join_rule))
-    }
-
-    async fn get_joined_rooms(&self) -> Result<Vec<OwnedRoomId>, RumaError> {
-        let request = api::client::membership::joined_rooms::v3::Request::new();
-        let response = self.client.send_request(request).await?;
-        Ok(response.joined_rooms)
-    }
-}
-
-struct RoomPlan {
-    alias: Option<OwnedRoomAliasId>,
-    invite: bool,
-    join: bool,
-    power_level: Option<Int>,
-}
-
-struct Plan {
-    rooms: BTreeMap<OwnedRoomId, RoomPlan>,
-}
-
-async fn make_plan(old: &User, new: &User) -> Result<Plan, MakePlanError> {
-    use MakePlanError as Error;
-
-    t::info!("fetching joined rooms for old user");
-    let old_joined_rooms = old
-        .get_joined_rooms()
-        .await
-        .map_err(|e| Error::GetJoinedRooms(UserKind::Old, e))?;
-
-    t::info!("fetching joined rooms for new user");
-    let new_joined_rooms = new
-        .get_joined_rooms()
-        .await
-        .map_err(|e| Error::GetJoinedRooms(UserKind::New, e))?;
-
-    let new_joined_rooms = new_joined_rooms.into_iter().collect::<HashSet<_>>();
-    let to_join = old_joined_rooms
-        .into_iter()
-        .filter(|room_id| !new_joined_rooms.contains(room_id))
-        .collect::<Vec<_>>();
-    t::info!("need to join {} rooms", to_join.len());
-
-    let mut rooms = BTreeMap::new();
-    for room_id in to_join {
-        let alias = match old.get_room_alias(&room_id).await {
-            Ok(alias) => alias,
-            Err(e) => {
-                t::warn!("failed to get alias for room {room_id}:\n  {e}");
-                None
-            }
-        };
-        let room_str = if let Some(alias) = &alias {
-            &format!("{room_id} ({alias})")
-        } else {
-            room_id.as_str()
-        };
-
-        let membership = old
-            .get_membership(&room_id, &new.user_id)
-            .await
-            .map_err(|e| Error::GetMembership(room_id.clone(), e))?
-            .unwrap_or(MembershipState::Leave);
-        let invited = match membership {
-            MembershipState::Invite => true,
-            // New user joined in between fetching the joined user list and now
-            MembershipState::Join => continue,
-            _ => false,
-        };
-
-        let join_rule = old
-            .get_join_rule(&room_id)
-            .await
-            .map_err(|e| Error::GetJoinRule(room_id.clone(), e))?;
-
-        let power_levels = old
-            .get_power_levels(&room_id)
-            .await
-            .map_err(|e| Error::GetPowerLevels(room_id.clone(), e))?;
-
-        // TODO: handle 'allow' field of 'm.room.join_rules', which could allow
-        // us to skip invites.
-        let need_invite =
-            !invited && !matches!(join_rule, Some(JoinRule::Public));
-
-        if need_invite {
-            let can_invite = power_levels.user_can_invite(&old.user_id);
-
-            if !can_invite {
-                t::warn!(
-                    "old user does not have permissions to invite new user to \
-                     {room_str}"
-                );
-                continue;
-            }
-        }
-
-        let old_power_level = power_levels.for_user(&old.user_id);
-        let new_power_level = power_levels.for_user(&new.user_id);
-        let set_power_level = if new_power_level < old_power_level {
-            if power_levels
-                .user_can_change_user_power_level(&old.user_id, &new.user_id)
-            {
-                Some(old_power_level)
-            } else {
-                t::warn!(
-                    "old user cannot copy power level {old_power_level} to \
-                     new user in {room_str}"
-                );
-                None
-            }
-        } else {
-            None
-        };
-
-        rooms.insert(
-            room_id.to_owned(),
-            RoomPlan {
-                alias,
-                invite: need_invite,
-                join: true,
-                power_level: set_power_level,
-            },
-        );
-    }
-
-    Ok(Plan {
-        rooms,
-    })
-}
-
-impl fmt::Display for Plan {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(f, "Rooms:")?;
-        for (id, room) in &self.rooms {
-            write!(f, "  - {id} (")?;
-            if room.invite {
-                write!(f, "invite,")?;
-            }
-            if room.join {
-                write!(f, "join")?;
-            }
-            write!(f, ")")?;
-            if let Some(alias) = &room.alias {
-                write!(f, " [{alias}]")?;
-            }
-            if let Some(power_level) = room.power_level {
-                write!(f, " (power={power_level})")?;
-            }
-            writeln!(f)?;
-        }
-        Ok(())
-    }
 }
 
 async fn try_main() -> Result<(), Error> {
