@@ -20,7 +20,7 @@ use ruma::{
         },
         StateEventType,
     },
-    OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomId, UserId,
+    Int, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomId, UserId,
 };
 use serde::{de::DeserializeOwned, Deserialize};
 use thiserror::Error;
@@ -275,6 +275,7 @@ struct RoomPlan {
     alias: Option<OwnedRoomAliasId>,
     invite: bool,
     join: bool,
+    power_level: Option<Int>,
 }
 
 struct Plan {
@@ -335,16 +336,17 @@ async fn make_plan(old: &User, new: &User) -> Result<Plan, MakePlanError> {
             .await
             .map_err(|e| Error::GetJoinRule(room_id.clone(), e))?;
 
+        let power_levels = old
+            .get_power_levels(&room_id)
+            .await
+            .map_err(|e| Error::GetPowerLevels(room_id.clone(), e))?;
+
         // TODO: handle 'allow' field of 'm.room.join_rules', which could allow
         // us to skip invites.
         let need_invite =
             !invited && !matches!(join_rule, Some(JoinRule::Public));
 
         if need_invite {
-            let power_levels = old
-                .get_power_levels(&room_id)
-                .await
-                .map_err(|e| Error::GetPowerLevels(room_id.clone(), e))?;
             let can_invite = power_levels.user_can_invite(&old.user_id);
 
             if !can_invite {
@@ -356,12 +358,31 @@ async fn make_plan(old: &User, new: &User) -> Result<Plan, MakePlanError> {
             }
         }
 
+        let old_power_level = power_levels.for_user(&old.user_id);
+        let new_power_level = power_levels.for_user(&new.user_id);
+        let set_power_level = if new_power_level < old_power_level {
+            if power_levels
+                .user_can_change_user_power_level(&old.user_id, &new.user_id)
+            {
+                Some(old_power_level)
+            } else {
+                t::warn!(
+                    "old user cannot copy power level {old_power_level} to \
+                     new user in {room_str}"
+                );
+                None
+            }
+        } else {
+            None
+        };
+
         rooms.insert(
             room_id.to_owned(),
             RoomPlan {
                 alias,
                 invite: need_invite,
                 join: true,
+                power_level: set_power_level,
             },
         );
     }
@@ -385,6 +406,9 @@ impl fmt::Display for Plan {
             write!(f, ")")?;
             if let Some(alias) = &room.alias {
                 write!(f, " [{alias}]")?;
+            }
+            if let Some(power_level) = room.power_level {
+                write!(f, " (power={power_level})")?;
             }
             writeln!(f)?;
         }
