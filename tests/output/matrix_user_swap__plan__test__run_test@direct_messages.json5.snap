@@ -10,10 +10,17 @@ input_file: tests/input/direct_messages.json5
       "m.direct": {
         "@user-a:example.com": [
           "!dm-with-user-a:example.com"
+        ],
+        "@user-b:example.com": [
+          "!dm-with-user-b:example.com"
         ]
       }
     },
     "new_user_id": "@new:example.com",
-    "rooms": {}
+    "rooms": {
+      "!dm-with-user-b:example.com": {
+        "join": true
+      }
+    }
   }
 }

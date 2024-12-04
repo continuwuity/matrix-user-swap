@@ -24,14 +24,40 @@
                     "membership": "join"
                 }
             }
-        ]
+        ],
+
+        // A room that the new user hasn't joined yet
+        "!dm-with-user-b:example.com": [
+            {
+                "type": "m.room.member",
+                "state_key": "@old:example.com",
+                "content": {
+                    "membership": "join"
+                }
+            },
+            {
+                "type": "m.room.member",
+                "state_key": "@user-b:example.com",
+                "content": {
+                    "membership": "join"
+                }
+            },
+            {
+                "type": "m.room.join_rules",
+                "state_key": "",
+                "content": {
+                    "join_rule": "public"
+                }
+            }
+        ],
     },
     "old_user": {
         "user_id": "@old:example.com",
 
         "global_account_data": {
             "m.direct": {
-                "@user-a:example.com": [ "!dm-with-user-a:example.com" ]
+                "@user-a:example.com": [ "!dm-with-user-a:example.com" ],
+                "@user-b:example.com": [ "!dm-with-user-b:example.com" ]
             }
         }
     },

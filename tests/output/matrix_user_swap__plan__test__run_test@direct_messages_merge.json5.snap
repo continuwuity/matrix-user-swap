@@ -1,0 +1,40 @@
+---
+source: src/plan.rs
+expression: "json!({ \"errors\": errors, \"plan\": plan, })"
+input_file: tests/input/direct_messages_merge.json5
+---
+{
+  "errors": [],
+  "plan": {
+    "global_account_data": {
+      "m.direct": {
+        "@user-a:example.com": [
+          "!dm-1-with-user-a:example.com",
+          "!dm-3-with-user-a:example.com",
+          "!dm-2-with-user-a:example.com"
+        ],
+        "@user-b:example.com": [
+          "!dm-with-user-b:example.com"
+        ],
+        "@user-c:example.com": [
+          "!dm-with-user-c:example.com"
+        ]
+      }
+    },
+    "new_user_id": "@new:example.com",
+    "rooms": {
+      "!dm-2-with-user-a:example.com": {
+        "invite": true,
+        "join": true
+      },
+      "!dm-with-user-b:example.com": {
+        "invite": true,
+        "join": true
+      },
+      "!dm-with-user-c:example.com": {
+        "invite": true,
+        "join": true
+      }
+    }
+  }
+}
