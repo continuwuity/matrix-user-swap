@@ -33,7 +33,6 @@ pub(crate) enum UserKind {
 }
 
 pub(crate) struct User {
-    pub(crate) user_id: OwnedUserId,
     client: Client,
 }
 
@@ -41,12 +40,10 @@ pub(crate) struct User {
 pub(crate) enum InitUserError {
     #[error("failed to initialize matrix client")]
     InitClient(#[source] RumaError),
-
-    #[error("failed to get user id")]
-    GetUserId(#[source] RumaError),
 }
 
 pub(crate) type GetJoinedRoomsError = RumaError;
+pub(crate) type GetUserIdError = RumaError;
 
 #[derive(Error, Debug)]
 pub(crate) enum GetStateEventError {
@@ -72,15 +69,15 @@ impl User {
             .await
             .map_err(Error::InitClient)?;
 
-        let request = api::client::account::whoami::v3::Request::new();
-        let response =
-            client.send_request(request).await.map_err(Error::GetUserId)?;
-        let user_id = response.user_id;
-
         Ok(User {
-            user_id,
             client,
         })
+    }
+
+    pub(crate) async fn get_user_id(&self) -> Result<OwnedUserId, RumaError> {
+        let request = api::client::account::whoami::v3::Request::new();
+        let response = self.client.send_request(request).await?;
+        Ok(response.user_id)
     }
 
     pub(crate) async fn get_state_event<T: DeserializeOwned>(

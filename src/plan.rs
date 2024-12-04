@@ -5,12 +5,14 @@ use std::{
 
 use ruma::{
     events::room::{join_rules::JoinRule, member::MembershipState},
-    Int, OwnedRoomAliasId, OwnedRoomId,
+    Int, OwnedRoomAliasId, OwnedRoomId, OwnedUserId,
 };
 use thiserror::Error;
 use tracing as t;
 
-use crate::user::{GetJoinedRoomsError, GetStateEventError, User, UserKind};
+use crate::user::{
+    GetJoinedRoomsError, GetStateEventError, GetUserIdError, User, UserKind,
+};
 
 pub(crate) struct RoomPlan {
     pub(crate) alias: Option<OwnedRoomAliasId>,
@@ -20,12 +22,16 @@ pub(crate) struct RoomPlan {
 }
 
 pub(crate) struct Plan {
+    pub(crate) new_user_id: OwnedUserId,
     pub(crate) rooms: BTreeMap<OwnedRoomId, RoomPlan>,
 }
 
 #[derive(Error, Debug)]
 #[allow(clippy::enum_variant_names)]
 pub(crate) enum MakePlanError {
+    #[error("failed to get user id for {_0} user")]
+    GetUserId(UserKind, #[source] GetUserIdError),
+
     #[error("failed to get joined room list for {_0} user")]
     GetJoinedRooms(UserKind, #[source] GetJoinedRoomsError),
 
@@ -44,6 +50,15 @@ pub(crate) async fn make_plan(
     new: &User,
 ) -> Result<Plan, MakePlanError> {
     use MakePlanError as Error;
+
+    let old_user_id = old
+        .get_user_id()
+        .await
+        .map_err(|e| Error::GetUserId(UserKind::Old, e))?;
+    let new_user_id = new
+        .get_user_id()
+        .await
+        .map_err(|e| Error::GetUserId(UserKind::New, e))?;
 
     t::info!("fetching joined rooms for old user");
     let old_joined_rooms = old
@@ -80,7 +95,7 @@ pub(crate) async fn make_plan(
         };
 
         let membership = old
-            .get_membership(&room_id, &new.user_id)
+            .get_membership(&room_id, &new_user_id)
             .await
             .map_err(|e| Error::GetMembership(room_id.clone(), e))?
             .unwrap_or(MembershipState::Leave);
@@ -107,7 +122,7 @@ pub(crate) async fn make_plan(
             !invited && !matches!(join_rule, Some(JoinRule::Public));
 
         if need_invite {
-            let can_invite = power_levels.user_can_invite(&old.user_id);
+            let can_invite = power_levels.user_can_invite(&old_user_id);
 
             if !can_invite {
                 t::warn!(
@@ -118,11 +133,11 @@ pub(crate) async fn make_plan(
             }
         }
 
-        let old_power_level = power_levels.for_user(&old.user_id);
-        let new_power_level = power_levels.for_user(&new.user_id);
+        let old_power_level = power_levels.for_user(&old_user_id);
+        let new_power_level = power_levels.for_user(&new_user_id);
         let set_power_level = if new_power_level < old_power_level {
             if power_levels
-                .user_can_change_user_power_level(&old.user_id, &new.user_id)
+                .user_can_change_user_power_level(&old_user_id, &new_user_id)
             {
                 Some(old_power_level)
             } else {
@@ -148,12 +163,15 @@ pub(crate) async fn make_plan(
     }
 
     Ok(Plan {
+        new_user_id,
         rooms,
     })
 }
 
 impl fmt::Display for Plan {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        writeln!(f, "New userid: {}", self.new_user_id)?;
+
         writeln!(f, "Rooms:")?;
         for (id, room) in &self.rooms {
             write!(f, "  - {id} (")?;
