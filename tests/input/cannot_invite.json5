@@ -1,0 +1,64 @@
+// Invite-only rooms where the old user does not have permission to invite the
+// new user. These should error out entirely.
+{
+    "rooms": {
+        "!simple-room:example.com": [
+            {
+                "type": "m.room.member",
+                "state_key": "@old:example.com",
+                "content": {
+                    "membership": "join"
+                }
+            },
+            {
+                "type": "m.room.join_rules",
+                "state_key": "",
+                "content": {
+                    "join_rule": "invite"
+                }
+            },
+            {
+                "type": "m.room.power_levels",
+                "state_key": "",
+                "content": {
+                    "invite": 50
+                }
+            }
+        ],
+
+        // With this room we *would* copy power levels, if we were able to join.
+        // We can't join, so make sure we don't generate a power levels plan.
+        "!power-levels-room:example.com": [
+            {
+                "type": "m.room.member",
+                "state_key": "@old:example.com",
+                "content": {
+                    "membership": "join"
+                }
+            },
+            {
+                "type": "m.room.join_rules",
+                "state_key": "",
+                "content": {
+                    "join_rule": "invite"
+                }
+            },
+            {
+                "type": "m.room.power_levels",
+                "state_key": "",
+                "content": {
+                    "invite": 50,
+                    "users": {
+                        "@old:example.com": 10
+                    }
+                }
+            }
+        ]
+    },
+    "old_user": {
+        "user_id": "@old:example.com"
+    },
+    "new_user": {
+        "user_id": "@new:example.com"
+    }
+}
