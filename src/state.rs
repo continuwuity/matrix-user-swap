@@ -19,6 +19,9 @@ use thiserror::Error;
 
 use crate::{Client, RumaError};
 
+#[cfg(test)]
+pub(crate) mod mock;
+
 pub(crate) trait StateAccessor {
     type Error: std::error::Error + 'static;
 

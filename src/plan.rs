@@ -7,11 +7,13 @@ use ruma::{
     events::room::{join_rules::JoinRule, member::MembershipState},
     Int, OwnedRoomAliasId, OwnedRoomId, OwnedUserId,
 };
+use serde::Serialize;
 use thiserror::Error;
 use tracing as t;
 
 use crate::{state::StateAccessor, UserKind};
 
+#[derive(Serialize)]
 pub(crate) struct RoomPlan {
     pub(crate) alias: Option<OwnedRoomAliasId>,
     pub(crate) invite: bool,
@@ -19,6 +21,7 @@ pub(crate) struct RoomPlan {
     pub(crate) power_level: Option<Int>,
 }
 
+#[derive(Serialize)]
 pub(crate) struct Plan {
     pub(crate) new_user_id: OwnedUserId,
     pub(crate) rooms: BTreeMap<OwnedRoomId, RoomPlan>,
@@ -189,5 +192,37 @@ impl fmt::Display for Plan {
             writeln!(f)?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::path::Path;
+
+    use insta::assert_json_snapshot;
+
+    use super::*;
+    use crate::state::mock::{MockState, MockStateAccessor};
+
+    async fn run_test(path: &Path) {
+        let state = MockState::new(path).unwrap();
+        let old = MockStateAccessor::new(UserKind::Old, &state);
+        let new = MockStateAccessor::new(UserKind::New, &state);
+        let plan = make_plan(&old, &new).await.unwrap();
+
+        insta::with_settings!({ snapshot_path => "../tests/output" }, {
+            assert_json_snapshot!(plan);
+        });
+    }
+
+    #[test]
+    fn make_plan_tests() {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        insta::glob!("../tests", "input/*.json5", |path| rt
+            .block_on(run_test(path)));
     }
 }

@@ -1,5 +1,6 @@
 {
   crane,
+  cargo-insta,
   engage,
   lychee,
   matrix-user-swap,
@@ -13,6 +14,7 @@ crane.devShell {
   };
 
   packages = [
+    cargo-insta
     engage
     lychee
     nixfmt-rfc-style

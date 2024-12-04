@@ -1,0 +1,11 @@
+// No rooms joined in either the old or new user, this should be a no-op
+{
+    "rooms": {
+    },
+    "old_user": {
+        "user_id": "@old:example.com"
+    },
+    "new_user": {
+        "user_id": "@new:example.com"
+    }
+}
