@@ -7,13 +7,13 @@ input_file: tests/input/cannot_invite.json5
   "errors": [
     {
       "RoomFailed": [
-        "!simple-room:example.com",
+        "!power-levels-room:example.com",
         "CannotInvite"
       ]
     },
     {
       "RoomFailed": [
-        "!power-levels-room:example.com",
+        "!simple-room:example.com",
         "CannotInvite"
       ]
     }

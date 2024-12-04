@@ -240,10 +240,13 @@ pub(crate) async fn make_plan<S: StateAccessor>(
         .map_err(|e| Error::GetUserId(UserKind::New, e))?;
 
     t::info!("fetching joined rooms for old user");
-    let old_joined_rooms = old
+    let mut old_joined_rooms = old
         .get_joined_rooms()
         .await
         .map_err(|e| Error::GetJoinedRooms(UserKind::Old, e))?;
+
+    // Ensure a deterministic order for snapshot tests
+    old_joined_rooms.sort();
 
     t::info!("fetching joined rooms for new user");
     let new_joined_rooms = new
