@@ -1,0 +1,43 @@
+// A DM between the old and new users. We do not want to copy the old user's
+// m.direct mapping in this case, because then we would end up with the new
+// user recording a DM to themselves.
+{
+    "rooms": {
+        "!dm:example.com": [
+            {
+                "type": "m.room.member",
+                "state_key": "@old:example.com",
+                "content": {
+                    "membership": "join"
+                }
+            },
+            {
+                "type": "m.room.member",
+                "state_key": "@new:example.com",
+                "content": {
+                    "membership": "join"
+                }
+            }
+        ]
+    },
+    "old_user": {
+        "user_id": "@old:example.com",
+
+        "global_account_data": {
+            "m.direct": {
+                // Old user sees this as a DM with new
+                "@new:example.com": [ "!dm:example.com" ]
+            }
+        }
+    },
+    "new_user": {
+        "user_id": "@new:example.com",
+
+        "global_account_data": {
+            "m.direct": {
+                // And new sees it as a DM with old
+                "@old:example.com": [ "!dm:example.com" ]
+            }
+        }
+    }
+}
