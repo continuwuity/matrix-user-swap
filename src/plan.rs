@@ -56,16 +56,28 @@ pub(crate) enum FatalPlanError<S: StateAccessor> {
 }
 
 /// Errors that prevent determining migration plan for a specific room.
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Serialize)]
 pub(crate) enum RoomPlanError<S: StateAccessor> {
     #[error("failed to get join rules")]
-    GetJoinRule(#[source] S::Error),
+    GetJoinRule(
+        #[source]
+        #[serde(skip)]
+        S::Error,
+    ),
 
     #[error("failed to get new user membership state")]
-    GetMembership(#[source] S::Error),
+    GetMembership(
+        #[source]
+        #[serde(skip)]
+        S::Error,
+    ),
 
     #[error("failed to get power levels")]
-    GetPowerLevels(#[source] S::Error),
+    GetPowerLevels(
+        #[source]
+        #[serde(skip)]
+        S::Error,
+    ),
 
     #[error(
         "room is invite-only, but old user does not have permission to invite \
@@ -78,16 +90,22 @@ pub(crate) enum RoomPlanError<S: StateAccessor> {
 ///
 /// These may block fully migrating particular rooms or data, but are not fatal
 /// for the migration as a whole.
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Serialize)]
 pub(crate) enum PlanError<S: StateAccessor> {
     #[error("cannot migrate room {_0}")]
+    #[serde(bound(serialize = "RoomPlanError<S>: Serialize"))]
     RoomFailed(OwnedRoomId, #[source] RoomPlanError<S>),
 
     #[error(
         "failed to get alias for room {_0}. This is mostly inconsequential, \
          and just might make it harder to identify the room in log messages."
     )]
-    AliasFailed(OwnedRoomId, #[source] S::Error),
+    AliasFailed(
+        OwnedRoomId,
+        #[source]
+        #[serde(skip)]
+        S::Error,
+    ),
 
     #[error(
         "old user does not have permission to copy their power level \
@@ -291,6 +309,7 @@ mod test {
     use std::path::Path;
 
     use insta::assert_json_snapshot;
+    use serde_json::json;
 
     use super::*;
     use crate::state::mock::{MockState, MockStateAccessor};
@@ -299,11 +318,13 @@ mod test {
         let state = MockState::new(path).unwrap();
         let old = MockStateAccessor::new(UserKind::Old, &state);
         let new = MockStateAccessor::new(UserKind::New, &state);
-        // TODO: include errors in snapshot
-        let (plan, _) = make_plan(&old, &new).await.unwrap();
+        let (plan, errors) = make_plan(&old, &new).await.unwrap();
 
         insta::with_settings!({ snapshot_path => "../tests/output" }, {
-            assert_json_snapshot!(plan);
+            assert_json_snapshot!(json!({
+                "errors": errors,
+                "plan": plan,
+            }));
         });
     }
 
