@@ -184,6 +184,7 @@ impl User {
         &self,
         room_id: &RoomId,
     ) -> Result<Option<JoinRule>, GetStateEventError> {
+        // TODO: why doesn't using RedactedRoomJoinRulesEventContent here work?
         let content = self
             .get_state_event::<RoomJoinRulesEventContent>(
                 room_id,
