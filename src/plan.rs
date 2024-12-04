@@ -51,6 +51,8 @@ struct MakePlanState<'a, S: StateAccessor> {
     old_user_id: OwnedUserId,
     new_joined_rooms: HashSet<OwnedRoomId>,
     errors: Vec<PlanError<S>>,
+
+    plan: Plan,
 }
 
 /// Errors that prevent determining migration plan entirely.
@@ -149,13 +151,15 @@ impl RoomPlan {
 }
 
 impl<S: StateAccessor> MakePlanState<'_, S> {
-    async fn make_room_plan(&mut self, room_id: &RoomId) -> Option<RoomPlan> {
-        let result = self.make_room_plan_inner(room_id).await;
+    async fn make_room_plan(&mut self, room_id: OwnedRoomId) {
+        let result = self.make_room_plan_inner(&room_id).await;
         match result {
-            Ok(plan) => plan,
+            Ok(Some(plan)) => {
+                self.plan.rooms.insert(room_id, plan);
+            }
+            Ok(None) => (),
             Err(e) => {
-                self.errors.push(PlanError::RoomFailed(room_id.to_owned(), e));
-                None
+                self.errors.push(PlanError::RoomFailed(room_id, e));
             }
         }
     }
@@ -302,27 +306,23 @@ pub(crate) async fn make_plan<S: StateAccessor>(
     let mut state = MakePlanState {
         old,
         new,
-        new_user_id,
         old_user_id,
+        new_user_id: new_user_id.clone(),
         new_joined_rooms,
         errors: vec![],
+
+        plan: Plan {
+            new_user_id,
+            rooms: BTreeMap::new(),
+            global_account_data: BTreeMap::new(),
+        },
     };
 
-    let mut rooms = BTreeMap::new();
     for room_id in old_joined_rooms {
-        if let Some(room_plan) = state.make_room_plan(&room_id).await {
-            rooms.insert(room_id, room_plan);
-        }
+        state.make_room_plan(room_id).await;
     }
 
-    let global_account_data = BTreeMap::new();
-
-    let plan = Plan {
-        new_user_id: state.new_user_id,
-        rooms,
-        global_account_data,
-    };
-    Ok((plan, state.errors))
+    Ok((state.plan, state.errors))
 }
 
 impl fmt::Display for Plan {
