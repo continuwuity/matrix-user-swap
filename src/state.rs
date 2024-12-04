@@ -9,7 +9,7 @@ use ruma::{
                 RedactedRoomPowerLevelsEventContent, RoomPowerLevels,
                 RoomPowerLevelsEventContent,
             },
-            server_acl::RoomServerAclEventContent
+            server_acl::RoomServerAclEventContent,
         },
         StateEventType,
     },
@@ -134,13 +134,31 @@ pub(crate) enum ClientStateError {
     StateEventDeserialize(StateEventType, #[source] serde_json::Error),
 }
 
-impl StateAccessor for Client {
+#[derive(Debug)]
+pub(crate) struct ClientStateAccessor {
+    client: Client,
+    user_id: OwnedUserId,
+}
+
+impl ClientStateAccessor {
+    pub(crate) async fn new(
+        client: Client,
+    ) -> Result<ClientStateAccessor, ClientStateError> {
+        let request = api::client::account::whoami::v3::Request::new();
+        let response = client.send_request(request).await?;
+
+        Ok(ClientStateAccessor {
+            client,
+            user_id: response.user_id,
+        })
+    }
+}
+
+impl StateAccessor for ClientStateAccessor {
     type Error = ClientStateError;
 
     async fn get_user_id(&self) -> Result<OwnedUserId, ClientStateError> {
-        let request = api::client::account::whoami::v3::Request::new();
-        let response = self.send_request(request).await?;
-        Ok(response.user_id)
+        Ok(self.user_id.clone())
     }
 
     async fn get_state_event<T: DeserializeOwned>(
@@ -157,7 +175,7 @@ impl StateAccessor for Client {
                 kind.clone(),
                 state_key,
             );
-        let response = self.send_request(request).await;
+        let response = self.client.send_request(request).await;
 
         let response = match response {
             Ok(response) => response,
@@ -184,7 +202,7 @@ impl StateAccessor for Client {
         &self,
     ) -> Result<Vec<OwnedRoomId>, ClientStateError> {
         let request = api::client::membership::joined_rooms::v3::Request::new();
-        let response = self.send_request(request).await?;
+        let response = self.client.send_request(request).await?;
         Ok(response.joined_rooms)
     }
 }

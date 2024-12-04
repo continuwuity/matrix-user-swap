@@ -15,7 +15,10 @@ use wee_woo::ErrorExt;
 mod plan;
 mod state;
 
-use crate::plan::{make_plan, FatalPlanError};
+use crate::{
+    plan::{make_plan, FatalPlanError},
+    state::{ClientStateAccessor, ClientStateError},
+};
 
 #[derive(Debug, Display, Copy, Clone)]
 pub(crate) enum UserKind {
@@ -53,8 +56,11 @@ enum Error {
     #[error("failed to initialize matrix client for {_0} user")]
     InitClient(UserKind, #[source] RumaError),
 
+    #[error("failed to initialize state accessor for {_0} user")]
+    InitClientState(UserKind, #[source] ClientStateError),
+
     #[error("failed to compute migration plan")]
-    MakePlan(#[from] FatalPlanError<Client>),
+    MakePlan(#[from] FatalPlanError<ClientStateAccessor>),
 }
 
 #[derive(Error, Debug)]
@@ -96,7 +102,14 @@ async fn try_main() -> Result<(), Error> {
         .await
         .map_err(|e| Error::InitClient(UserKind::New, e))?;
 
-    let (plan, errors) = make_plan(&old_client, &new_client).await?;
+    let old = ClientStateAccessor::new(old_client)
+        .await
+        .map_err(|e| Error::InitClientState(UserKind::Old, e))?;
+    let new = ClientStateAccessor::new(new_client)
+        .await
+        .map_err(|e| Error::InitClientState(UserKind::New, e))?;
+
+    let (plan, errors) = make_plan(&old, &new).await?;
 
     for error in errors {
         t::error!("{}", error.display_with_sources("\n  Caused by: "));

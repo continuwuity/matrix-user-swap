@@ -95,7 +95,9 @@ pub(crate) enum RoomPlanError<S: StateAccessor> {
     #[error("new user is banned from room. Will not attempt to join")]
     Banned,
 
-    #[error("new user's server is ACL banned from room. Will not attempt to join")]
+    #[error(
+        "new user's server is ACL banned from room. Will not attempt to join"
+    )]
     AclBanned,
 }
 
@@ -207,8 +209,7 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
                 return Err(Error::Banned);
             }
 
-            let server_acl =
-                self
+            let server_acl = self
                 .old
                 .get_server_acl(room_id)
                 .await
