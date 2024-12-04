@@ -151,8 +151,8 @@ impl RoomPlan {
 }
 
 impl<S: StateAccessor> MakePlanState<'_, S> {
-    async fn make_room_plan(&mut self, room_id: OwnedRoomId) {
-        let result = self.make_room_plan_inner(&room_id).await;
+    async fn plan_room(&mut self, room_id: OwnedRoomId) {
+        let result = self.plan_room_inner(&room_id).await;
         match result {
             Ok(Some(plan)) => {
                 self.plan.rooms.insert(room_id, plan);
@@ -164,7 +164,7 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
         }
     }
 
-    async fn make_room_plan_inner(
+    async fn plan_room_inner(
         &mut self,
         room_id: &RoomId,
     ) -> Result<Option<RoomPlan>, RoomPlanError<S>> {
@@ -319,7 +319,7 @@ pub(crate) async fn make_plan<S: StateAccessor>(
     };
 
     for room_id in old_joined_rooms {
-        state.make_room_plan(room_id).await;
+        state.plan_room(room_id).await;
     }
 
     Ok((state.plan, state.errors))
