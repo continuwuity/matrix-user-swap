@@ -1,0 +1,97 @@
+// New user needs to join invite-only rooms where they are already invited.
+// New user should just join these rooms, without the old user inviting them
+// a second time.
+{
+    "rooms": {
+        // Room with public joins, so the invite is not actually necessary
+        "!room-public:example.com": [
+            {
+                "type": "m.room.member",
+                "state_key": "@old:example.com",
+                "content": {
+                    "membership": "join"
+                }
+            },
+            {
+                "type": "m.room.member",
+                "state_key": "@new:example.com",
+                "content": {
+                    "membership": "invite"
+                }
+            },
+            {
+                "type": "m.room.join_rules",
+                "state_key": "",
+                "content": {
+                    "join_rule": "public"
+                }
+            }
+        ],
+
+        // Invite-only room where the old user has permission to invite, but
+        // does not need to because the new user is already invited.
+        "!room-invite-only:example.com": [
+            {
+                "type": "m.room.member",
+                "state_key": "@old:example.com",
+                "content": {
+                    "membership": "join"
+                }
+            },
+            {
+                "type": "m.room.member",
+                "state_key": "@new:example.com",
+                "content": {
+                    "membership": "invite"
+                }
+            },
+            {
+                "type": "m.room.join_rules",
+                "state_key": "",
+                "content": {
+                    "join_rule": "invite"
+                }
+            }
+        ],
+
+        // Invite-only room where the old user does not have permission to
+        // invite new user, but this isn't a problem because the knew user
+        // is already invited.
+        "!room-invite-only-cannot-invite:example.com": [
+            {
+                "type": "m.room.member",
+                "state_key": "@old:example.com",
+                "content": {
+                    "membership": "join"
+                }
+            },
+            {
+                "type": "m.room.member",
+                "state_key": "@new:example.com",
+                "content": {
+                    "membership": "invite"
+                }
+            },
+            {
+                "type": "m.room.join_rules",
+                "state_key": "",
+                "content": {
+                    "join_rule": "invite"
+                }
+            },
+            {
+                "type": "m.room.power_levels",
+                "state_key": "",
+                "content": {
+                    "invite": 50
+                }
+            }
+        ],
+    },
+    "old_user": {
+        "user_id": "@old:example.com"
+    },
+    "new_user": {
+        "user_id": "@new:example.com"
+    }
+}

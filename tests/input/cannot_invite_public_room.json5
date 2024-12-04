@@ -1,0 +1,35 @@
+// Room where the old user does not have permission to invite the new user, but
+// the join rules are public so this doesn't matter.
+{
+    "rooms": {
+        "!room1:example.com": [
+            {
+                "type": "m.room.member",
+                "state_key": "@old:example.com",
+                "content": {
+                    "membership": "join"
+                }
+            },
+            {
+                "type": "m.room.join_rules",
+                "state_key": "",
+                "content": {
+                    "join_rule": "public"
+                }
+            },
+            {
+                "type": "m.room.power_levels",
+                "state_key": "",
+                "content": {
+                    "invite": 50
+                }
+            }
+        ]
+    },
+    "old_user": {
+        "user_id": "@old:example.com"
+    },
+    "new_user": {
+        "user_id": "@new:example.com"
+    }
+}

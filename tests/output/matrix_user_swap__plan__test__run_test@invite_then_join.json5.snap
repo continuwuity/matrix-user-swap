@@ -1,0 +1,14 @@
+---
+source: src/plan.rs
+expression: plan
+input_file: tests/input/invite_then_join.json5
+---
+{
+  "new_user_id": "@new:example.com",
+  "rooms": {
+    "!room1:example.com": {
+      "invite": true,
+      "join": true
+    }
+  }
+}

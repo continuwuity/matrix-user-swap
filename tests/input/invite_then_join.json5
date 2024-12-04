@@ -1,0 +1,28 @@
+// New user needs to join an invite-only room where the old user has invite
+// permission. Old user invites new user, then the new user joins.
+{
+    "rooms": {
+        "!room1:example.com": [
+            {
+                "type": "m.room.member",
+                "state_key": "@old:example.com",
+                "content": {
+                    "membership": "join"
+                }
+            },
+            {
+                "type": "m.room.join_rules",
+                "state_key": "",
+                "content": {
+                    "join_rule": "invite"
+                }
+            }
+        ]
+    },
+    "old_user": {
+        "user_id": "@old:example.com"
+    },
+    "new_user": {
+        "user_id": "@new:example.com"
+    }
+}
