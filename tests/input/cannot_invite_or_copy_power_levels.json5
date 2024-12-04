@@ -1,0 +1,38 @@
+// Invite-only rooms where the old user cannot invite the new user or copy power
+// levels. We should emit error messages from both issues here. Users will
+// likely need to resolve things by talking to a moderator in affects rooms. You
+// don't want to have to ask a mod to invite you, wait for a response, run the
+// tool again, and only then find out that you need to ask a mod to set your
+// power level as well.
+{
+    "rooms": {
+        "!room:example.com": [
+            {
+                "type": "m.room.member",
+                "state_key": "@old:example.com",
+                "content": {
+                    "membership": "join"
+                }
+            },
+            {
+                "type": "m.room.power_levels",
+                "state_key": "",
+                "content": {
+                    "invite": 100,
+                    "events": {
+                        "m.room.power_levels": 100
+                    },
+                    "users": {
+                        "@old:example.com": 50
+                    }
+                }
+            }
+        ],
+    },
+    "old_user": {
+        "user_id": "@old:example.com"
+    },
+    "new_user": {
+        "user_id": "@new:example.com"
+    }
+}
