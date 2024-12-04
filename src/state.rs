@@ -1,6 +1,6 @@
 use ruma::{
     api::{self, client::error::ErrorKind, error::FromHttpResponseError},
-    client::{self, HttpClient},
+    client,
     events::{
         room::{
             join_rules::{JoinRule, RoomJoinRulesEventContent},
@@ -17,24 +17,97 @@ use ruma::{
 use serde::{de::DeserializeOwned, Deserialize};
 use thiserror::Error;
 
-pub(crate) type Client = client::Client<client::http_client::Reqwest>;
+use crate::{Client, RumaError};
 
-pub(crate) type ReqwestError =
-    <client::http_client::Reqwest as HttpClient>::Error;
-pub(crate) type RumaError = client::Error<ReqwestError, api::client::Error>;
+pub(crate) trait StateAccessor {
+    type Error: std::error::Error + 'static;
 
-pub(crate) struct StateAccessor {
-    client: Client,
+    async fn get_user_id(&self) -> Result<OwnedUserId, Self::Error>;
+
+    async fn get_joined_rooms(&self) -> Result<Vec<OwnedRoomId>, Self::Error>;
+
+    async fn get_state_event<T: DeserializeOwned>(
+        &self,
+        room_id: &RoomId,
+        kind: StateEventType,
+        state_key: String,
+    ) -> Result<Option<T>, Self::Error>;
+
+    async fn get_room_alias(
+        &self,
+        room_id: &RoomId,
+    ) -> Result<Option<OwnedRoomAliasId>, Self::Error> {
+        #[derive(Deserialize)]
+        struct Extract {
+            alias: Option<OwnedRoomAliasId>,
+        }
+        let extract = self
+            .get_state_event::<Extract>(
+                room_id,
+                StateEventType::RoomCanonicalAlias,
+                "".to_owned(),
+            )
+            .await?;
+        Ok(extract.and_then(|extract| extract.alias))
+    }
+
+    async fn get_membership(
+        &self,
+        room_id: &RoomId,
+        user_id: &UserId,
+    ) -> Result<Option<MembershipState>, Self::Error> {
+        #[derive(Deserialize)]
+        struct Extract {
+            membership: MembershipState,
+        }
+        let extract = self
+            .get_state_event::<Extract>(
+                room_id,
+                StateEventType::RoomMember,
+                user_id.as_str().to_owned(),
+            )
+            .await?;
+        Ok(extract.map(|extract| extract.membership))
+    }
+
+    async fn get_power_levels(
+        &self,
+        room_id: &RoomId,
+    ) -> Result<RoomPowerLevels, Self::Error> {
+        // We only care about the keys that are preserved on redaction, so just
+        // deserialize to the redacted type. Redactable fields will be dropped.
+        let content = self
+            .get_state_event::<RedactedRoomPowerLevelsEventContent>(
+                room_id,
+                StateEventType::RoomPowerLevels,
+                "".to_owned(),
+            )
+            .await?;
+        if let Some(content) = content {
+            Ok(content.into())
+        } else {
+            Ok(RoomPowerLevelsEventContent::default().into())
+        }
+    }
+
+    async fn get_join_rule(
+        &self,
+        room_id: &RoomId,
+    ) -> Result<Option<JoinRule>, Self::Error> {
+        // TODO: why doesn't using RedactedRoomJoinRulesEventContent here work?
+        let content = self
+            .get_state_event::<RoomJoinRulesEventContent>(
+                room_id,
+                StateEventType::RoomJoinRules,
+                "".to_owned(),
+            )
+            .await?;
+        Ok(content.map(|content| content.join_rule))
+    }
 }
 
 #[derive(Error, Debug)]
-pub(crate) enum InitStateAccessorError {
-    #[error("failed to initialize matrix client")]
-    InitClient(#[source] RumaError),
-}
-
-#[derive(Error, Debug)]
-pub(crate) enum StateError {
+pub(crate) enum ClientStateError {
     #[error("client api request failed")]
     Request(#[from] RumaError),
 
@@ -42,39 +115,22 @@ pub(crate) enum StateError {
     StateEventDeserialize(StateEventType, #[source] serde_json::Error),
 }
 
-impl StateAccessor {
-    pub(crate) async fn new(
-        hs_url: String,
-        access_token: String,
-        http_client: client::http_client::Reqwest,
-    ) -> Result<StateAccessor, InitStateAccessorError> {
-        use InitStateAccessorError as Error;
+impl StateAccessor for Client {
+    type Error = ClientStateError;
 
-        let client = client::Client::builder()
-            .access_token(Some(access_token))
-            .homeserver_url(hs_url)
-            .http_client(http_client.clone())
-            .await
-            .map_err(Error::InitClient)?;
-
-        Ok(StateAccessor {
-            client,
-        })
-    }
-
-    pub(crate) async fn get_user_id(&self) -> Result<OwnedUserId, StateError> {
+    async fn get_user_id(&self) -> Result<OwnedUserId, ClientStateError> {
         let request = api::client::account::whoami::v3::Request::new();
-        let response = self.client.send_request(request).await?;
+        let response = self.send_request(request).await?;
         Ok(response.user_id)
     }
 
-    pub(crate) async fn get_state_event<T: DeserializeOwned>(
+    async fn get_state_event<T: DeserializeOwned>(
         &self,
         room_id: &RoomId,
         kind: StateEventType,
         state_key: String,
-    ) -> Result<Option<T>, StateError> {
-        use StateError as Error;
+    ) -> Result<Option<T>, ClientStateError> {
+        use ClientStateError as Error;
 
         let request =
             api::client::state::get_state_events_for_key::v3::Request::new(
@@ -82,7 +138,7 @@ impl StateAccessor {
                 kind.clone(),
                 state_key,
             );
-        let response = self.client.send_request(request).await;
+        let response = self.send_request(request).await;
 
         let response = match response {
             Ok(response) => response,
@@ -105,83 +161,11 @@ impl StateAccessor {
         Ok(Some(content))
     }
 
-    pub(crate) async fn get_room_alias(
+    async fn get_joined_rooms(
         &self,
-        room_id: &RoomId,
-    ) -> Result<Option<OwnedRoomAliasId>, StateError> {
-        #[derive(Deserialize)]
-        struct Extract {
-            alias: Option<OwnedRoomAliasId>,
-        }
-        let extract = self
-            .get_state_event::<Extract>(
-                room_id,
-                StateEventType::RoomCanonicalAlias,
-                "".to_owned(),
-            )
-            .await?;
-        Ok(extract.and_then(|extract| extract.alias))
-    }
-
-    pub(crate) async fn get_membership(
-        &self,
-        room_id: &RoomId,
-        user_id: &UserId,
-    ) -> Result<Option<MembershipState>, StateError> {
-        #[derive(Deserialize)]
-        struct Extract {
-            membership: MembershipState,
-        }
-        let extract = self
-            .get_state_event::<Extract>(
-                room_id,
-                StateEventType::RoomMember,
-                user_id.as_str().to_owned(),
-            )
-            .await?;
-        Ok(extract.map(|extract| extract.membership))
-    }
-
-    pub(crate) async fn get_power_levels(
-        &self,
-        room_id: &RoomId,
-    ) -> Result<RoomPowerLevels, StateError> {
-        // We only care about the keys that are preserved on redaction, so just
-        // deserialize to the redacted type. Redactable fields will be dropped.
-        let content = self
-            .get_state_event::<RedactedRoomPowerLevelsEventContent>(
-                room_id,
-                StateEventType::RoomPowerLevels,
-                "".to_owned(),
-            )
-            .await?;
-        if let Some(content) = content {
-            Ok(content.into())
-        } else {
-            Ok(RoomPowerLevelsEventContent::default().into())
-        }
-    }
-
-    pub(crate) async fn get_join_rule(
-        &self,
-        room_id: &RoomId,
-    ) -> Result<Option<JoinRule>, StateError> {
-        // TODO: why doesn't using RedactedRoomJoinRulesEventContent here work?
-        let content = self
-            .get_state_event::<RoomJoinRulesEventContent>(
-                room_id,
-                StateEventType::RoomJoinRules,
-                "".to_owned(),
-            )
-            .await?;
-        Ok(content.map(|content| content.join_rule))
-    }
-
-    pub(crate) async fn get_joined_rooms(
-        &self,
-    ) -> Result<Vec<OwnedRoomId>, StateError> {
+    ) -> Result<Vec<OwnedRoomId>, ClientStateError> {
         let request = api::client::membership::joined_rooms::v3::Request::new();
-        let response = self.client.send_request(request).await?;
+        let response = self.send_request(request).await?;
         Ok(response.joined_rooms)
     }
 }

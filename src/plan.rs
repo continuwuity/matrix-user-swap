@@ -10,10 +10,7 @@ use ruma::{
 use thiserror::Error;
 use tracing as t;
 
-use crate::{
-    state::{StateAccessor, StateError},
-    UserKind,
-};
+use crate::{state::StateAccessor, UserKind};
 
 pub(crate) struct RoomPlan {
     pub(crate) alias: Option<OwnedRoomAliasId>,
@@ -29,27 +26,27 @@ pub(crate) struct Plan {
 
 #[derive(Error, Debug)]
 #[allow(clippy::enum_variant_names)]
-pub(crate) enum MakePlanError {
+pub(crate) enum MakePlanError<S: StateAccessor> {
     #[error("failed to get user id for {_0} user")]
-    GetUserId(UserKind, #[source] StateError),
+    GetUserId(UserKind, #[source] S::Error),
 
     #[error("failed to get joined room list for {_0} user")]
-    GetJoinedRooms(UserKind, #[source] StateError),
+    GetJoinedRooms(UserKind, #[source] S::Error),
 
     #[error("failed to get join rules for room {_0}")]
-    GetJoinRule(OwnedRoomId, #[source] StateError),
+    GetJoinRule(OwnedRoomId, #[source] S::Error),
 
     #[error("failed to get new user membership state in room {_0}")]
-    GetMembership(OwnedRoomId, #[source] StateError),
+    GetMembership(OwnedRoomId, #[source] S::Error),
 
     #[error("failed to get power levels state room {_0}")]
-    GetPowerLevels(OwnedRoomId, #[source] StateError),
+    GetPowerLevels(OwnedRoomId, #[source] S::Error),
 }
 
-pub(crate) async fn make_plan(
-    old: &StateAccessor,
-    new: &StateAccessor,
-) -> Result<Plan, MakePlanError> {
+pub(crate) async fn make_plan<S: StateAccessor>(
+    old: &S,
+    new: &S,
+) -> Result<Plan, MakePlanError<S>> {
     use MakePlanError as Error;
 
     let old_user_id = old

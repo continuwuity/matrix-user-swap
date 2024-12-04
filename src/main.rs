@@ -2,7 +2,10 @@ use std::process::ExitCode;
 
 use clap::Parser;
 use derive_more::Display;
-use ruma::client::{self};
+use ruma::{
+    api,
+    client::{self, HttpClient},
+};
 use thiserror::Error;
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::{self, prelude::*};
@@ -11,10 +14,7 @@ use wee_woo::ErrorExt;
 mod plan;
 mod state;
 
-use crate::{
-    plan::{make_plan, MakePlanError},
-    state::{InitStateAccessorError, StateAccessor},
-};
+use crate::plan::{make_plan, MakePlanError};
 
 #[derive(Debug, Display, Copy, Clone)]
 pub(crate) enum UserKind {
@@ -39,16 +39,21 @@ struct Cli {
     new_hs_url: String,
 }
 
+pub(crate) type Client = client::Client<client::http_client::Reqwest>;
+pub(crate) type ReqwestError =
+    <client::http_client::Reqwest as HttpClient>::Error;
+pub(crate) type RumaError = client::Error<ReqwestError, api::client::Error>;
+
 #[derive(Error, Debug)]
 enum Error {
     #[error("failed to initialize logging")]
     InitLogging(#[from] InitLoggingError),
 
-    #[error("failed to initialize {_0} user")]
-    InitUser(UserKind, #[source] InitStateAccessorError),
+    #[error("failed to initialize matrix client for {_0} user")]
+    InitClient(UserKind, #[source] RumaError),
 
     #[error("failed to compute migration plan")]
-    MakePlan(#[from] MakePlanError),
+    MakePlan(#[from] MakePlanError<Client>),
 }
 
 #[derive(Error, Debug)]
@@ -77,19 +82,20 @@ async fn try_main() -> Result<(), Error> {
 
     let http_client = client::http_client::Reqwest::new();
 
-    let old_state = StateAccessor::new(
-        cli.old_hs_url,
-        cli.old_access_token,
-        http_client.clone(),
-    )
-    .await
-    .map_err(|e| Error::InitUser(UserKind::Old, e))?;
-    let new_state =
-        StateAccessor::new(cli.new_hs_url, cli.new_access_token, http_client)
-            .await
-            .map_err(|e| Error::InitUser(UserKind::New, e))?;
+    let old_client = client::Client::builder()
+        .access_token(Some(cli.old_access_token))
+        .homeserver_url(cli.old_hs_url)
+        .http_client(http_client.clone())
+        .await
+        .map_err(|e| Error::InitClient(UserKind::Old, e))?;
+    let new_client = client::Client::builder()
+        .access_token(Some(cli.new_access_token))
+        .homeserver_url(cli.new_hs_url)
+        .http_client(http_client.clone())
+        .await
+        .map_err(|e| Error::InitClient(UserKind::New, e))?;
 
-    let plan = make_plan(&old_state, &new_state).await?;
+    let plan = make_plan(&old_client, &new_client).await?;
     println!("{plan}");
 
     Ok(())
