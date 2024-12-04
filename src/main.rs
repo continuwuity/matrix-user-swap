@@ -7,6 +7,7 @@ use ruma::{
     client::{self, HttpClient},
 };
 use thiserror::Error;
+use tracing as t;
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::{self, prelude::*};
 use wee_woo::ErrorExt;
@@ -14,7 +15,7 @@ use wee_woo::ErrorExt;
 mod plan;
 mod state;
 
-use crate::plan::{make_plan, MakePlanError};
+use crate::plan::{make_plan, FatalPlanError};
 
 #[derive(Debug, Display, Copy, Clone)]
 pub(crate) enum UserKind {
@@ -53,7 +54,7 @@ enum Error {
     InitClient(UserKind, #[source] RumaError),
 
     #[error("failed to compute migration plan")]
-    MakePlan(#[from] MakePlanError<Client>),
+    MakePlan(#[from] FatalPlanError<Client>),
 }
 
 #[derive(Error, Debug)]
@@ -95,7 +96,12 @@ async fn try_main() -> Result<(), Error> {
         .await
         .map_err(|e| Error::InitClient(UserKind::New, e))?;
 
-    let plan = make_plan(&old_client, &new_client).await?;
+    let (plan, errors) = make_plan(&old_client, &new_client).await?;
+
+    for error in errors {
+        t::error!("{}", error.display_with_sources("\n  Caused by: "));
+    }
+
     println!("{plan}");
 
     Ok(())
