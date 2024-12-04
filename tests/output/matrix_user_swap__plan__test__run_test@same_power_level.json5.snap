@@ -1,0 +1,9 @@
+---
+source: src/plan.rs
+expression: plan
+input_file: tests/input/same_power_level.json5
+---
+{
+  "new_user_id": "@new:example.com",
+  "rooms": {}
+}
