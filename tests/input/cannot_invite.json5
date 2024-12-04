@@ -47,9 +47,9 @@
                 "type": "m.room.power_levels",
                 "state_key": "",
                 "content": {
-                    "invite": 50,
+                    "invite": 100,
                     "users": {
-                        "@old:example.com": 10
+                        "@old:example.com": 50
                     }
                 }
             }
