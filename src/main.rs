@@ -68,22 +68,13 @@ async fn try_main() -> Result<(), Error> {
 
     let http_client = client::http_client::Reqwest::new();
 
-    let old_user = User::new(
-        UserKind::Old,
-        cli.old_hs_url,
-        cli.old_access_token,
-        http_client.clone(),
-    )
-    .await
-    .map_err(|e| Error::InitUser(UserKind::Old, e))?;
-    let new_user = User::new(
-        UserKind::New,
-        cli.new_hs_url,
-        cli.new_access_token,
-        http_client,
-    )
-    .await
-    .map_err(|e| Error::InitUser(UserKind::New, e))?;
+    let old_user =
+        User::new(cli.old_hs_url, cli.old_access_token, http_client.clone())
+            .await
+            .map_err(|e| Error::InitUser(UserKind::Old, e))?;
+    let new_user = User::new(cli.new_hs_url, cli.new_access_token, http_client)
+        .await
+        .map_err(|e| Error::InitUser(UserKind::New, e))?;
 
     let plan = make_plan(&old_user, &new_user).await?;
     println!("{plan}");

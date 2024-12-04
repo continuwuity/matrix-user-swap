@@ -33,7 +33,6 @@ pub(crate) enum UserKind {
 }
 
 pub(crate) struct User {
-    pub(crate) kind: UserKind,
     pub(crate) user_id: OwnedUserId,
     client: Client,
 }
@@ -60,7 +59,6 @@ pub(crate) enum GetStateEventError {
 
 impl User {
     pub(crate) async fn new(
-        kind: UserKind,
         hs_url: String,
         access_token: String,
         http_client: client::http_client::Reqwest,
@@ -80,7 +78,6 @@ impl User {
         let user_id = response.user_id;
 
         Ok(User {
-            kind,
             user_id,
             client,
         })
