@@ -159,6 +159,25 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
             .await
             .map_err(Error::GetPowerLevels)?;
 
+        let old_power_level = power_levels.for_user(&self.old_user_id);
+        let new_power_level = power_levels.for_user(&self.new_user_id);
+        let set_power_level = if new_power_level < old_power_level {
+            if power_levels.user_can_change_user_power_level(
+                &self.old_user_id,
+                &self.new_user_id,
+            ) {
+                Some(old_power_level)
+            } else {
+                self.errors.push(PlanError::CannotCopyPowerLevel {
+                    room_id: room_id.to_owned(),
+                    old_power_level,
+                });
+                None
+            }
+        } else {
+            None
+        };
+
         let need_join = !self.new_joined_rooms.contains(room_id);
 
         let need_invite = if !need_join {
@@ -189,25 +208,6 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
                 return Err(Error::CannotInvite);
             }
         }
-
-        let old_power_level = power_levels.for_user(&self.old_user_id);
-        let new_power_level = power_levels.for_user(&self.new_user_id);
-        let set_power_level = if new_power_level < old_power_level {
-            if power_levels.user_can_change_user_power_level(
-                &self.old_user_id,
-                &self.new_user_id,
-            ) {
-                Some(old_power_level)
-            } else {
-                self.errors.push(PlanError::CannotCopyPowerLevel {
-                    room_id: room_id.to_owned(),
-                    old_power_level,
-                });
-                None
-            }
-        } else {
-            None
-        };
 
         let room_plan = RoomPlan {
             alias,
