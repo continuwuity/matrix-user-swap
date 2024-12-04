@@ -5,6 +5,7 @@ use std::{
 
 use ruma::{
     events::{
+        direct::DirectEventContent,
         room::{join_rules::JoinRule, member::MembershipState},
         AnyGlobalAccountDataEventContent, GlobalAccountDataEventType,
     },
@@ -112,6 +113,18 @@ pub(crate) enum RoomPlanError<S: StateAccessor> {
     AclBanned,
 }
 
+/// Fatal errors migrating `m.direct` global account data event.
+#[derive(Error, Debug, Serialize)]
+pub(crate) enum DirectAccountDataPlanError<S: StateAccessor> {
+    #[error("failed to get direct message mapping for {_0} user")]
+    GetEvent(
+        UserKind,
+        #[source]
+        #[serde(skip)]
+        S::Error,
+    ),
+}
+
 /// Non-fatal errors determining a migration plan.
 ///
 /// These may block fully migrating particular rooms or data, but are not fatal
@@ -121,6 +134,10 @@ pub(crate) enum PlanError<S: StateAccessor> {
     #[error("cannot migrate room {_0}")]
     #[serde(bound(serialize = "RoomPlanError<S>: Serialize"))]
     RoomFailed(OwnedRoomId, #[source] RoomPlanError<S>),
+
+    #[error("cannot migrate direct message mapping")]
+    #[serde(bound(serialize = "DirectAccountDataPlanError<S>: Serialize"))]
+    DirectAccountDataFailed(#[from] DirectAccountDataPlanError<S>),
 
     #[error(
         "failed to get alias for room {_0}. This is mostly inconsequential, \
@@ -151,6 +168,18 @@ impl RoomPlan {
 }
 
 impl<S: StateAccessor> MakePlanState<'_, S> {
+    /// Returns whether the new user is expected to be joined to a given room
+    /// after the migration is executed.
+    fn will_join(&self, room_id: &RoomId) -> bool {
+        self.new_joined_rooms.contains(room_id)
+            || self
+                .plan
+                .rooms
+                .get(room_id)
+                .map(|room| room.join)
+                .unwrap_or(false)
+    }
+
     async fn plan_room(&mut self, room_id: OwnedRoomId) {
         let result = self.plan_room_inner(&room_id).await;
         match result {
@@ -267,6 +296,77 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
             None
         })
     }
+
+    async fn plan_account_data_direct(&mut self) {
+        let result = self.plan_account_data_direct_inner().await;
+        match result {
+            Ok(Some(content)) => {
+                self.plan
+                    .global_account_data
+                    .insert(GlobalAccountDataEventType::Direct, content.cast());
+            }
+            Ok(None) => (),
+            Err(e) => {
+                self.errors.push(e.into());
+            }
+        }
+    }
+
+    async fn plan_account_data_direct_inner(
+        &mut self,
+    ) -> Result<Option<Raw<DirectEventContent>>, DirectAccountDataPlanError<S>>
+    {
+        use DirectAccountDataPlanError as Error;
+
+        // TODO: shotgun parsing to deal with element[1] :(
+        // [1]: https://github.com/element-hq/element-web/issues/27630
+
+        let old = self
+            .old
+            .get_global_account_data_event::<DirectEventContent>(
+                GlobalAccountDataEventType::Direct,
+            )
+            .await
+            .map_err(|e| Error::GetEvent(UserKind::Old, e))?;
+        let Some(old) = old else {
+            return Ok(None);
+        };
+
+        let mut new = self
+            .new
+            .get_global_account_data_event::<DirectEventContent>(
+                GlobalAccountDataEventType::Direct,
+            )
+            .await
+            .map_err(|e| Error::GetEvent(UserKind::New, e))?
+            .unwrap_or_default();
+
+        let mut changed = false;
+
+        for (user, rooms) in old.0 {
+            for room in rooms {
+                // TODO: it's possible for the join to fail in the execution
+                // step, Try to handle that?
+                if !self.will_join(&room) {
+                    continue;
+                }
+
+                let new_rooms = new.entry(user.to_owned()).or_default();
+                if !new_rooms.contains(&room) {
+                    changed = true;
+                    new_rooms.push(room);
+                }
+            }
+        }
+
+        if changed {
+            Ok(Some(
+                Raw::new(&new).expect("serialization should always succeed"),
+            ))
+        } else {
+            Ok(None)
+        }
+    }
 }
 
 pub(crate) async fn make_plan<S: StateAccessor>(
@@ -321,6 +421,8 @@ pub(crate) async fn make_plan<S: StateAccessor>(
     for room_id in old_joined_rooms {
         state.plan_room(room_id).await;
     }
+
+    state.plan_account_data_direct().await;
 
     Ok((state.plan, state.errors))
 }

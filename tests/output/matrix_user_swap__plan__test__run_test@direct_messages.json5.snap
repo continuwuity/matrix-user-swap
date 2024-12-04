@@ -6,6 +6,13 @@ input_file: tests/input/direct_messages.json5
 {
   "errors": [],
   "plan": {
+    "global_account_data": {
+      "m.direct": {
+        "@user-a:example.com": [
+          "!dm-with-user-a:example.com"
+        ]
+      }
+    },
     "new_user_id": "@new:example.com",
     "rooms": {}
   }

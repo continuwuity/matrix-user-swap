@@ -6,6 +6,7 @@ use ruma::{
     api,
     client::{self, HttpClient},
 };
+use serde::Serialize;
 use thiserror::Error;
 use tracing as t;
 use tracing::level_filters::LevelFilter;
@@ -20,7 +21,7 @@ use crate::{
     state::{ClientStateAccessor, ClientStateError},
 };
 
-#[derive(Debug, Display, Copy, Clone)]
+#[derive(Debug, Display, Copy, Clone, Serialize)]
 pub(crate) enum UserKind {
     #[display("old")]
     Old,
