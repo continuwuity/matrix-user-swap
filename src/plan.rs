@@ -13,11 +13,19 @@ use tracing as t;
 
 use crate::{state::StateAccessor, UserKind};
 
+fn is_default<T: Default + Eq>(value: &T) -> bool {
+    value == &T::default()
+}
+
 #[derive(Serialize)]
 pub(crate) struct RoomPlan {
+    #[serde(skip_serializing_if = "is_default")]
     pub(crate) alias: Option<OwnedRoomAliasId>,
+    #[serde(default, skip_serializing_if = "is_default")]
     pub(crate) invite: bool,
+    #[serde(default, skip_serializing_if = "is_default")]
     pub(crate) join: bool,
+    #[serde(skip_serializing_if = "is_default")]
     pub(crate) power_level: Option<Int>,
 }
 
