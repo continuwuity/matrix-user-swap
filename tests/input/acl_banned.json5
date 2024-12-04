@@ -1,0 +1,88 @@
+// New user's server is banned by the room ACL. We should generate an error that
+// distinguishes this case from the "banned by a member event" case.
+{
+    "rooms": {
+        // New user's server is on the denylist
+        "!deny:example.com": [
+            {
+                "type": "m.room.member",
+                "state_key": "@user:old.com",
+                "content": {
+                    "membership": "join"
+                }
+            },
+            {
+                "type": "m.room.server_acl",
+                "state_key": "",
+                "content": {
+                    "allow": [ "*" ],
+                    "deny": [ "new.com" ]
+                }
+            },
+            {
+                "type": "m.room.join_rules",
+                "state_key": "",
+                "content": {
+                    "join_rule": "public"
+                }
+            }
+        ],
+
+        // Old user's server is on the allowlist, but the new user is not
+        "!allow:example.com": [
+            {
+                "type": "m.room.member",
+                "state_key": "@user:old.com",
+                "content": {
+                    "membership": "join"
+                }
+            },
+            {
+                "type": "m.room.server_acl",
+                "state_key": "",
+                "content": {
+                    "allow": [ "old.com" ]
+                }
+            },
+            {
+                "type": "m.room.join_rules",
+                "state_key": "",
+                "content": {
+                    "join_rule": "public"
+                }
+            }
+        ],
+
+        // New user's server is matched by a wildcard rule in the deny list
+        "!deny-wildcard:example.com": [
+            {
+                "type": "m.room.member",
+                "state_key": "@user:old.com",
+                "content": {
+                    "membership": "join"
+                }
+            },
+            {
+                "type": "m.room.server_acl",
+                "state_key": "",
+                "content": {
+                    "allow": [ "*" ],
+                    "deny": [ "new.*" ]
+                }
+            },
+            {
+                "type": "m.room.join_rules",
+                "state_key": "",
+                "content": {
+                    "join_rule": "public"
+                }
+            }
+        ],
+    },
+    "old_user": {
+        "user_id": "@user:old.com"
+    },
+    "new_user": {
+        "user_id": "@user:new.com"
+    }
+}

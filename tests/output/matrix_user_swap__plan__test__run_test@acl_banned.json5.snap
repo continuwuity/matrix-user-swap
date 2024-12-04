@@ -1,0 +1,22 @@
+---
+source: src/plan.rs
+expression: "json!({ \"errors\": errors, \"plan\": plan, })"
+input_file: tests/input/acl_banned.json5
+---
+{
+  "errors": [],
+  "plan": {
+    "new_user_id": "@user:new.com",
+    "rooms": {
+      "!allow:example.com": {
+        "join": true
+      },
+      "!deny-wildcard:example.com": {
+        "join": true
+      },
+      "!deny:example.com": {
+        "join": true
+      }
+    }
+  }
+}

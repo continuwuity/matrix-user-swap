@@ -1,0 +1,133 @@
+// Rooms that have an ACL that allows both old and new servers. This test just
+// exists to look for false positives in the ACL-ban check.
+{
+    "rooms": {
+        "!allow-all:example.com": [
+            {
+                "type": "m.room.member",
+                "state_key": "@user:old.com",
+                "content": {
+                    "membership": "join"
+                }
+            },
+            {
+                "type": "m.room.server_acl",
+                "state_key": "",
+                "content": {
+                    "allow": [ "*" ],
+                }
+            },
+            {
+                "type": "m.room.join_rules",
+                "state_key": "",
+                "content": {
+                    "join_rule": "public"
+                }
+            }
+        ],
+
+        "!deny-irrelevant:example.com": [
+            {
+                "type": "m.room.member",
+                "state_key": "@user:old.com",
+                "content": {
+                    "membership": "join"
+                }
+            },
+            {
+                "type": "m.room.server_acl",
+                "state_key": "",
+                "content": {
+                    "allow": [ "*" ],
+                    "deny": [ "evil.com" ]
+                }
+            },
+            {
+                "type": "m.room.join_rules",
+                "state_key": "",
+                "content": {
+                    "join_rule": "public"
+                }
+            }
+        ],
+
+        "!deny-irrelevant-wildcard:example.com": [
+            {
+                "type": "m.room.member",
+                "state_key": "@user:old.com",
+                "content": {
+                    "membership": "join"
+                }
+            },
+            {
+                "type": "m.room.server_acl",
+                "state_key": "",
+                "content": {
+                    "allow": [ "*" ],
+                    "deny": [ "evil.*" ]
+                }
+            },
+            {
+                "type": "m.room.join_rules",
+                "state_key": "",
+                "content": {
+                    "join_rule": "public"
+                }
+            }
+        ],
+
+        "!explicitly-allowed:example.com": [
+            {
+                "type": "m.room.member",
+                "state_key": "@user:old.com",
+                "content": {
+                    "membership": "join"
+                }
+            },
+            {
+                "type": "m.room.server_acl",
+                "state_key": "",
+                "content": {
+                    "allow": [ "old.com", "new.com" ]
+                }
+            },
+            {
+                "type": "m.room.join_rules",
+                "state_key": "",
+                "content": {
+                    "join_rule": "public"
+                }
+            }
+        ],
+
+        "!allowed-by-wildcard:example.com": [
+            {
+                "type": "m.room.member",
+                "state_key": "@user:old.com",
+                "content": {
+                    "membership": "join"
+                }
+            },
+            {
+                "type": "m.room.server_acl",
+                "state_key": "",
+                "content": {
+                    "allow": [ "*.com" ]
+                }
+            },
+            {
+                "type": "m.room.join_rules",
+                "state_key": "",
+                "content": {
+                    "join_rule": "public"
+                }
+            }
+        ]
+    },
+    "old_user": {
+        "user_id": "@user:old.com"
+    },
+    "new_user": {
+        "user_id": "@user:new.com"
+    }
+}

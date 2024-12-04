@@ -1,0 +1,28 @@
+---
+source: src/plan.rs
+expression: "json!({ \"errors\": errors, \"plan\": plan, })"
+input_file: tests/input/acl_allowed.json5
+---
+{
+  "errors": [],
+  "plan": {
+    "new_user_id": "@user:new.com",
+    "rooms": {
+      "!allow-all:example.com": {
+        "join": true
+      },
+      "!allowed-by-wildcard:example.com": {
+        "join": true
+      },
+      "!deny-irrelevant-wildcard:example.com": {
+        "join": true
+      },
+      "!deny-irrelevant:example.com": {
+        "join": true
+      },
+      "!explicitly-allowed:example.com": {
+        "join": true
+      }
+    }
+  }
+}
