@@ -84,6 +84,9 @@ pub(crate) enum RoomPlanError<S: StateAccessor> {
          new user"
     )]
     CannotInvite,
+
+    #[error("new user is banned from room. Will not attempt to join")]
+    Banned,
 }
 
 /// Non-fatal errors determining a migration plan.
@@ -189,6 +192,11 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
                 .await
                 .map_err(Error::GetMembership)?
                 .unwrap_or(MembershipState::Leave);
+
+            if membership == MembershipState::Ban {
+                return Err(Error::Banned);
+            }
+
             let invited = membership == MembershipState::Invite;
 
             let join_rule = self
