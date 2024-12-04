@@ -4,7 +4,11 @@ use std::{
 };
 
 use ruma::{
-    events::room::{join_rules::JoinRule, member::MembershipState},
+    events::{
+        room::{join_rules::JoinRule, member::MembershipState},
+        AnyGlobalAccountDataEventContent, GlobalAccountDataEventType,
+    },
+    serde::Raw,
     Int, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomId,
 };
 use serde::Serialize;
@@ -33,6 +37,11 @@ pub(crate) struct RoomPlan {
 pub(crate) struct Plan {
     pub(crate) new_user_id: OwnedUserId,
     pub(crate) rooms: BTreeMap<OwnedRoomId, RoomPlan>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub(crate) global_account_data: BTreeMap<
+        GlobalAccountDataEventType,
+        Raw<AnyGlobalAccountDataEventContent>,
+    >,
 }
 
 struct MakePlanState<'a, S: StateAccessor> {
@@ -306,9 +315,12 @@ pub(crate) async fn make_plan<S: StateAccessor>(
         }
     }
 
+    let global_account_data = BTreeMap::new();
+
     let plan = Plan {
         new_user_id: state.new_user_id,
         rooms,
+        global_account_data,
     };
     Ok((plan, state.errors))
 }
@@ -334,6 +346,13 @@ impl fmt::Display for Plan {
                 write!(f, " (power={power_level})")?;
             }
             writeln!(f)?;
+        }
+
+        writeln!(f, "Global account data:")?;
+        for (kind, content) in &self.global_account_data {
+            let content_str = serde_json::to_string_pretty(content)
+                .expect("Raw<T> serialization should always succeed");
+            writeln!(f, "{kind}: {}", content_str)?;
         }
         Ok(())
     }
