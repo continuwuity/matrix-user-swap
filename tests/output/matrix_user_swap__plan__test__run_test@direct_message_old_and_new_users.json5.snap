@@ -6,16 +6,6 @@ input_file: tests/input/direct_message_old_and_new_users.json5
 {
   "errors": [],
   "plan": {
-    "global_account_data": {
-      "m.direct": {
-        "@new:example.com": [
-          "!dm:example.com"
-        ],
-        "@old:example.com": [
-          "!dm:example.com"
-        ]
-      }
-    },
     "new_user_id": "@new:example.com",
     "rooms": {}
   }

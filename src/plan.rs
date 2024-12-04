@@ -344,6 +344,13 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
         let mut changed = false;
 
         for (user, rooms) in old.0 {
+            // Don't try to migrate the m.direct mapping for DMs between the old
+            // and new users. The result would be the new user recording a DM
+            // with themselves.
+            if user == self.new_user_id {
+                continue;
+            }
+
             for room in rooms {
                 // TODO: it's possible for the join to fail in the execution
                 // step, Try to handle that?
