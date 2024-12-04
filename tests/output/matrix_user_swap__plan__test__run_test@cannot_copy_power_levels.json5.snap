@@ -1,0 +1,39 @@
+---
+source: src/plan.rs
+expression: "json!({ \"errors\": errors, \"plan\": plan, })"
+input_file: tests/input/cannot_copy_power_levels.json5
+---
+{
+  "errors": [
+    {
+      "CannotCopyPowerLevel": {
+        "old_power_level": 50,
+        "room_id": "!already-joined:example.com"
+      }
+    },
+    {
+      "CannotCopyPowerLevel": {
+        "old_power_level": 50,
+        "room_id": "!invite:example.com"
+      }
+    },
+    {
+      "CannotCopyPowerLevel": {
+        "old_power_level": 50,
+        "room_id": "!public:example.com"
+      }
+    }
+  ],
+  "plan": {
+    "new_user_id": "@new:example.com",
+    "rooms": {
+      "!invite:example.com": {
+        "invite": true,
+        "join": true
+      },
+      "!public:example.com": {
+        "join": true
+      }
+    }
+  }
+}

@@ -1,0 +1,101 @@
+// Rooms where the new user can join, but the old user does not have permission
+// to copy power levels to the new user. We should generate an appropriate
+// plan to join these rooms, but should also emit an error about the power
+// levels.
+{
+    "rooms": {
+        // This should be a no-op, aside from the power levels error.
+        "!already-joined:example.com": [
+            {
+                "type": "m.room.member",
+                "state_key": "@old:example.com",
+                "content": {
+                    "membership": "join"
+                }
+            },
+            {
+                "type": "m.room.member",
+                "state_key": "@new:example.com",
+                "content": {
+                    "membership": "join"
+                }
+            },
+            {
+                "type": "m.room.power_levels",
+                "state_key": "",
+                "content": {
+                    "events": {
+                        "m.room.power_levels": 100
+                    },
+                    "users": {
+                        "@old:example.com": 50
+                    }
+                }
+            }
+        ],
+
+        "!public:example.com": [
+            {
+                "type": "m.room.member",
+                "state_key": "@old:example.com",
+                "content": {
+                    "membership": "join"
+                }
+            },
+            {
+                "type": "m.room.join_rules",
+                "state_key": "",
+                "content": {
+                    "join_rule": "public"
+                }
+            },
+            {
+                "type": "m.room.power_levels",
+                "state_key": "",
+                "content": {
+                    "events": {
+                        "m.room.power_levels": 100
+                    },
+                    "users": {
+                        "@old:example.com": 50
+                    }
+                }
+            }
+        ],
+
+        "!invite:example.com": [
+            {
+                "type": "m.room.member",
+                "state_key": "@old:example.com",
+                "content": {
+                    "membership": "join"
+                }
+            },
+            {
+                "type": "m.room.join_rules",
+                "state_key": "",
+                "content": {
+                    "join_rule": "invite"
+                }
+            },
+            {
+                "type": "m.room.power_levels",
+                "state_key": "",
+                "content": {
+                    "events": {
+                        "m.room.power_levels": 100
+                    },
+                    "users": {
+                        "@old:example.com": 50
+                    }
+                }
+            }
+        ]
+    },
+    "old_user": {
+        "user_id": "@old:example.com"
+    },
+    "new_user": {
+        "user_id": "@new:example.com"
+    }
+}
