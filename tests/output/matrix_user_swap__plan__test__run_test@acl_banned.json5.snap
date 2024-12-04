@@ -4,19 +4,28 @@ expression: "json!({ \"errors\": errors, \"plan\": plan, })"
 input_file: tests/input/acl_banned.json5
 ---
 {
-  "errors": [],
+  "errors": [
+    {
+      "RoomFailed": [
+        "!allow:example.com",
+        "AclBanned"
+      ]
+    },
+    {
+      "RoomFailed": [
+        "!deny-wildcard:example.com",
+        "AclBanned"
+      ]
+    },
+    {
+      "RoomFailed": [
+        "!deny:example.com",
+        "AclBanned"
+      ]
+    }
+  ],
   "plan": {
     "new_user_id": "@user:new.com",
-    "rooms": {
-      "!allow:example.com": {
-        "join": true
-      },
-      "!deny-wildcard:example.com": {
-        "join": true
-      },
-      "!deny:example.com": {
-        "join": true
-      }
-    }
+    "rooms": {}
   }
 }

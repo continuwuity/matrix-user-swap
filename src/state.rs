@@ -9,6 +9,7 @@ use ruma::{
                 RedactedRoomPowerLevelsEventContent, RoomPowerLevels,
                 RoomPowerLevelsEventContent,
             },
+            server_acl::RoomServerAclEventContent
         },
         StateEventType,
     },
@@ -106,6 +107,21 @@ pub(crate) trait StateAccessor {
             )
             .await?;
         Ok(content.map(|content| content.join_rule))
+    }
+
+    async fn get_server_acl(
+        &self,
+        room_id: &RoomId,
+    ) -> Result<Option<RoomServerAclEventContent>, Self::Error> {
+        // TODO: don't error if the event was redacted, just return None
+        let content = self
+            .get_state_event::<RoomServerAclEventContent>(
+                room_id,
+                StateEventType::RoomServerAcl,
+                "".to_owned(),
+            )
+            .await?;
+        Ok(content)
     }
 }
 
