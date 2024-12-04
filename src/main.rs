@@ -1,6 +1,7 @@
 use std::process::ExitCode;
 
 use clap::Parser;
+use derive_more::Display;
 use ruma::client::{self};
 use thiserror::Error;
 use tracing::level_filters::LevelFilter;
@@ -8,12 +9,20 @@ use tracing_subscriber::{self, prelude::*};
 use wee_woo::ErrorExt;
 
 mod plan;
-mod user;
+mod state;
 
 use crate::{
     plan::{make_plan, MakePlanError},
-    user::{InitUserError, User, UserKind},
+    state::{InitStateAccessorError, StateAccessor},
 };
+
+#[derive(Debug, Display, Copy, Clone)]
+pub(crate) enum UserKind {
+    #[display("old")]
+    Old,
+    #[display("new")]
+    New,
+}
 
 // TODO: support server discovery from userid
 // TODO: support password auth
@@ -36,7 +45,7 @@ enum Error {
     InitLogging(#[from] InitLoggingError),
 
     #[error("failed to initialize {_0} user")]
-    InitUser(UserKind, #[source] InitUserError),
+    InitUser(UserKind, #[source] InitStateAccessorError),
 
     #[error("failed to compute migration plan")]
     MakePlan(#[from] MakePlanError),
@@ -68,15 +77,19 @@ async fn try_main() -> Result<(), Error> {
 
     let http_client = client::http_client::Reqwest::new();
 
-    let old_user =
-        User::new(cli.old_hs_url, cli.old_access_token, http_client.clone())
+    let old_state = StateAccessor::new(
+        cli.old_hs_url,
+        cli.old_access_token,
+        http_client.clone(),
+    )
+    .await
+    .map_err(|e| Error::InitUser(UserKind::Old, e))?;
+    let new_state =
+        StateAccessor::new(cli.new_hs_url, cli.new_access_token, http_client)
             .await
-            .map_err(|e| Error::InitUser(UserKind::Old, e))?;
-    let new_user = User::new(cli.new_hs_url, cli.new_access_token, http_client)
-        .await
-        .map_err(|e| Error::InitUser(UserKind::New, e))?;
+            .map_err(|e| Error::InitUser(UserKind::New, e))?;
 
-    let plan = make_plan(&old_user, &new_user).await?;
+    let plan = make_plan(&old_state, &new_state).await?;
     println!("{plan}");
 
     Ok(())
