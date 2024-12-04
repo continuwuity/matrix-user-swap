@@ -54,6 +54,13 @@ pub(crate) enum MakePlanError<S: StateAccessor> {
     GetPowerLevels(OwnedRoomId, #[source] S::Error),
 }
 
+impl RoomPlan {
+    /// Returns `true` if no actions need to be taken for this room.
+    fn is_empty(&self) -> bool {
+        !self.invite && !self.join && self.power_level.is_none()
+    }
+}
+
 pub(crate) async fn make_plan<S: StateAccessor>(
     old: &S,
     new: &S,
@@ -82,14 +89,14 @@ pub(crate) async fn make_plan<S: StateAccessor>(
         .map_err(|e| Error::GetJoinedRooms(UserKind::New, e))?;
 
     let new_joined_rooms = new_joined_rooms.into_iter().collect::<HashSet<_>>();
-    let to_join = old_joined_rooms
-        .into_iter()
-        .filter(|room_id| !new_joined_rooms.contains(room_id))
-        .collect::<Vec<_>>();
-    t::info!("need to join {} rooms", to_join.len());
+
+    t::info!("need to evaluate {} rooms", old_joined_rooms.len());
 
     let mut rooms = BTreeMap::new();
-    for room_id in to_join {
+    for room_id in old_joined_rooms {
+        // TODO: skip fetching the alias when we don't need it (this can happen
+        // if a room is already fully migrated and we don't need to print an
+        // error)
         let alias = match old.get_room_alias(&room_id).await {
             Ok(alias) => alias,
             Err(e) => {
@@ -103,32 +110,31 @@ pub(crate) async fn make_plan<S: StateAccessor>(
             room_id.as_str()
         };
 
-        let membership = old
-            .get_membership(&room_id, &new_user_id)
-            .await
-            .map_err(|e| Error::GetMembership(room_id.clone(), e))?
-            .unwrap_or(MembershipState::Leave);
-        let invited = match membership {
-            MembershipState::Invite => true,
-            // New user joined in between fetching the joined user list and now
-            MembershipState::Join => continue,
-            _ => false,
-        };
-
-        let join_rule = old
-            .get_join_rule(&room_id)
-            .await
-            .map_err(|e| Error::GetJoinRule(room_id.clone(), e))?;
-
         let power_levels = old
             .get_power_levels(&room_id)
             .await
             .map_err(|e| Error::GetPowerLevels(room_id.clone(), e))?;
 
-        // TODO: handle 'allow' field of 'm.room.join_rules', which could allow
-        // us to skip invites.
-        let need_invite =
-            !invited && !matches!(join_rule, Some(JoinRule::Public));
+        let need_join = !new_joined_rooms.contains(&room_id);
+
+        let need_invite = if !need_join {
+            false
+        } else {
+            let membership = old
+                .get_membership(&room_id, &new_user_id)
+                .await
+                .map_err(|e| Error::GetMembership(room_id.clone(), e))?
+                .unwrap_or(MembershipState::Leave);
+            let invited = membership == MembershipState::Invite;
+
+            let join_rule = old
+                .get_join_rule(&room_id)
+                .await
+                .map_err(|e| Error::GetJoinRule(room_id.clone(), e))?;
+            // TODO: handle 'allow' field of 'm.room.join_rules', which could
+            // allow us to skip invites.
+            !invited && !matches!(join_rule, Some(JoinRule::Public))
+        };
 
         if need_invite {
             let can_invite = power_levels.user_can_invite(&old_user_id);
@@ -160,15 +166,16 @@ pub(crate) async fn make_plan<S: StateAccessor>(
             None
         };
 
-        rooms.insert(
-            room_id.to_owned(),
-            RoomPlan {
-                alias,
-                invite: need_invite,
-                join: true,
-                power_level: set_power_level,
-            },
-        );
+        let room_plan = RoomPlan {
+            alias,
+            invite: need_invite,
+            join: need_join,
+            power_level: set_power_level,
+        };
+
+        if !room_plan.is_empty() {
+            rooms.insert(room_id.to_owned(), room_plan);
+        }
     }
 
     Ok(Plan {
