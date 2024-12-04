@@ -11,7 +11,7 @@ use ruma::{
             },
             server_acl::RoomServerAclEventContent,
         },
-        StateEventType,
+        GlobalAccountDataEventType, StateEventType,
     },
     OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomId, UserId,
 };
@@ -35,6 +35,11 @@ pub(crate) trait StateAccessor {
         room_id: &RoomId,
         kind: StateEventType,
         state_key: String,
+    ) -> Result<Option<T>, Self::Error>;
+
+    async fn get_global_account_data_event<T: DeserializeOwned>(
+        &self,
+        kind: GlobalAccountDataEventType,
     ) -> Result<Option<T>, Self::Error>;
 
     async fn get_room_alias(
@@ -132,6 +137,12 @@ pub(crate) enum ClientStateError {
 
     #[error("{_0} event did not match expected schema")]
     StateEventDeserialize(StateEventType, #[source] serde_json::Error),
+
+    #[error("{_0} event did not match expected schema")]
+    GlobalAccountDataEventDeserialize(
+        GlobalAccountDataEventType,
+        #[source] serde_json::Error,
+    ),
 }
 
 #[derive(Debug)]
@@ -204,5 +215,39 @@ impl StateAccessor for ClientStateAccessor {
         let request = api::client::membership::joined_rooms::v3::Request::new();
         let response = self.client.send_request(request).await?;
         Ok(response.joined_rooms)
+    }
+
+    async fn get_global_account_data_event<T: DeserializeOwned>(
+        &self,
+        kind: GlobalAccountDataEventType,
+    ) -> Result<Option<T>, Self::Error> {
+        use ClientStateError as Error;
+
+        let request =
+            api::client::config::get_global_account_data::v3::Request::new(
+                self.user_id.clone(),
+                kind.clone(),
+            );
+        let response = self.client.send_request(request).await;
+
+        let response = match response {
+            Ok(response) => response,
+            // Spec says that "The room has no state with the given type or
+            // key." is 404, but does not specify a errcode, so this
+            // is the best we can do.
+            Err(e) if e.error_kind() == Some(&ErrorKind::NotFound) => {
+                return Ok(None)
+            }
+            Err(client::Error::FromHttpResponse(
+                FromHttpResponseError::Server(e),
+            )) if e.status_code.as_u16() == 404 => return Ok(None),
+            Err(e) => return Err(e.into()),
+        };
+
+        let content = response
+            .account_data
+            .deserialize_as::<T>()
+            .map_err(|e| Error::GlobalAccountDataEventDeserialize(kind, e))?;
+        Ok(Some(content))
     }
 }

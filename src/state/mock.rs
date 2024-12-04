@@ -1,7 +1,10 @@
 use std::{collections::HashMap, fs, io, path::Path};
 
 use ruma::{
-    events::{room::member::MembershipState, StateEventType},
+    events::{
+        room::member::MembershipState, GlobalAccountDataEventType,
+        StateEventType,
+    },
     OwnedRoomId, OwnedUserId, RoomId,
 };
 use serde::{de::DeserializeOwned, Deserialize};
@@ -33,6 +36,8 @@ struct Room {
 #[derive(Debug, Deserialize)]
 struct User {
     user_id: OwnedUserId,
+    #[serde(default)]
+    global_account_data: HashMap<GlobalAccountDataEventType, serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -122,6 +127,12 @@ impl<'a> MockStateAccessor<'a> {
 pub(crate) enum MockStateError {
     #[error("{_0} event did not match expected schema")]
     StateEventDeserialize(StateEventType, #[source] serde_json::Error),
+
+    #[error("{_0} event did not match expected schema")]
+    GlobalAccountDataEventDeserialize(
+        GlobalAccountDataEventType,
+        #[source] serde_json::Error,
+    ),
 }
 
 impl StateAccessor for MockStateAccessor<'_> {
@@ -148,6 +159,20 @@ impl StateAccessor for MockStateAccessor<'_> {
         };
         let content = serde_json::from_value(content.clone())
             .map_err(|e| Error::StateEventDeserialize(key.0, e))?;
+        Ok(Some(content))
+    }
+
+    async fn get_global_account_data_event<T: DeserializeOwned>(
+        &self,
+        kind: GlobalAccountDataEventType,
+    ) -> Result<Option<T>, MockStateError> {
+        use MockStateError as Error;
+
+        let Some(content) = self.user().global_account_data.get(&kind) else {
+            return Ok(None);
+        };
+        let content = serde_json::from_value(content.clone())
+            .map_err(|e| Error::GlobalAccountDataEventDeserialize(kind, e))?;
         Ok(Some(content))
     }
 
