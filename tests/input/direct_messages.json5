@@ -1,0 +1,41 @@
+// Simplest case of migrating m.direct, where the new user doesn't have a
+// m.direct event so no merge logic is necessary.
+{
+    "rooms": {
+        "!dm-with-user-a:example.com": [
+            {
+                "type": "m.room.member",
+                "state_key": "@old:example.com",
+                "content": {
+                    "membership": "join"
+                }
+            },
+            {
+                "type": "m.room.member",
+                "state_key": "@new:example.com",
+                "content": {
+                    "membership": "join"
+                }
+            },
+            {
+                "type": "m.room.member",
+                "state_key": "@user-a:example.com",
+                "content": {
+                    "membership": "join"
+                }
+            }
+        ]
+    },
+    "old_user": {
+        "user_id": "@old:example.com",
+
+        "global_account_data": {
+            "m.direct": {
+                "@user-a:example.com": [ "!dm-with-user-a:example.com" ]
+            }
+        }
+    },
+    "new_user": {
+        "user_id": "@new:example.com"
+    }
+}
