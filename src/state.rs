@@ -11,7 +11,7 @@ use ruma::{
             },
             server_acl::RoomServerAclEventContent,
         },
-        GlobalAccountDataEventType, StateEventType,
+        GlobalAccountDataEventType, RoomAccountDataEventType, StateEventType,
     },
     OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomId, UserId,
 };
@@ -40,6 +40,12 @@ pub(crate) trait StateAccessor {
     async fn get_global_account_data_event<T: DeserializeOwned>(
         &self,
         kind: GlobalAccountDataEventType,
+    ) -> Result<Option<T>, Self::Error>;
+
+    async fn get_room_account_data_event<T: DeserializeOwned>(
+        &self,
+        room: &RoomId,
+        kind: RoomAccountDataEventType,
     ) -> Result<Option<T>, Self::Error>;
 
     async fn get_room_alias(
@@ -141,6 +147,12 @@ pub(crate) enum ClientStateError {
     #[error("{_0} event did not match expected schema")]
     GlobalAccountDataEventDeserialize(
         GlobalAccountDataEventType,
+        #[source] serde_json::Error,
+    ),
+
+    #[error("{_0} event did not match expected schema")]
+    RoomAccountDataEventDeserialize(
+        RoomAccountDataEventType,
         #[source] serde_json::Error,
     ),
 }
@@ -247,6 +259,41 @@ impl StateAccessor for ClientStateAccessor {
             .account_data
             .deserialize_as::<T>()
             .map_err(|e| Error::GlobalAccountDataEventDeserialize(kind, e))?;
+        Ok(Some(content))
+    }
+
+    async fn get_room_account_data_event<T: DeserializeOwned>(
+        &self,
+        room_id: &RoomId,
+        kind: RoomAccountDataEventType,
+    ) -> Result<Option<T>, Self::Error> {
+        use ClientStateError as Error;
+
+        let request =
+            api::client::config::get_room_account_data::v3::Request::new(
+                self.user_id.clone(),
+                room_id.to_owned(),
+                kind.clone(),
+            );
+        let response = self.client.send_request(request).await;
+
+        let response = match response {
+            Ok(response) => response,
+            // Spec mentions a 404 response, but doesn't specify errcode or
+            // semantics. This is the best we can do.
+            Err(e) if e.error_kind() == Some(&ErrorKind::NotFound) => {
+                return Ok(None)
+            }
+            Err(client::Error::FromHttpResponse(
+                FromHttpResponseError::Server(e),
+            )) if e.status_code.as_u16() == 404 => return Ok(None),
+            Err(e) => return Err(e.into()),
+        };
+
+        let content = response
+            .account_data
+            .deserialize_as::<T>()
+            .map_err(|e| Error::RoomAccountDataEventDeserialize(kind, e))?;
         Ok(Some(content))
     }
 }

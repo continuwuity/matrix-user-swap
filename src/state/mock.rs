@@ -3,7 +3,7 @@ use std::{collections::HashMap, fs, io, path::Path};
 use ruma::{
     events::{
         room::member::MembershipState, GlobalAccountDataEventType,
-        StateEventType,
+        RoomAccountDataEventType, StateEventType,
     },
     OwnedRoomId, OwnedUserId, RoomId,
 };
@@ -38,6 +38,11 @@ struct User {
     user_id: OwnedUserId,
     #[serde(default)]
     global_account_data: HashMap<GlobalAccountDataEventType, serde_json::Value>,
+    #[serde(default)]
+    room_account_data: HashMap<
+        OwnedRoomId,
+        HashMap<RoomAccountDataEventType, serde_json::Value>,
+    >,
 }
 
 #[derive(Debug, Deserialize)]
@@ -124,6 +129,7 @@ impl<'a> MockStateAccessor<'a> {
 }
 
 #[derive(Error, Debug)]
+#[allow(clippy::enum_variant_names)]
 pub(crate) enum MockStateError {
     #[error("{_0} event did not match expected schema")]
     StateEventDeserialize(StateEventType, #[source] serde_json::Error),
@@ -131,6 +137,12 @@ pub(crate) enum MockStateError {
     #[error("{_0} event did not match expected schema")]
     GlobalAccountDataEventDeserialize(
         GlobalAccountDataEventType,
+        #[source] serde_json::Error,
+    ),
+
+    #[error("{_0} event did not match expected schema")]
+    RoomAccountDataEventDeserialize(
+        RoomAccountDataEventType,
         #[source] serde_json::Error,
     ),
 }
@@ -173,6 +185,24 @@ impl StateAccessor for MockStateAccessor<'_> {
         };
         let content = serde_json::from_value(content.clone())
             .map_err(|e| Error::GlobalAccountDataEventDeserialize(kind, e))?;
+        Ok(Some(content))
+    }
+
+    async fn get_room_account_data_event<T: DeserializeOwned>(
+        &self,
+        room_id: &RoomId,
+        kind: RoomAccountDataEventType,
+    ) -> Result<Option<T>, MockStateError> {
+        use MockStateError as Error;
+
+        let Some(room) = self.user().room_account_data.get(room_id) else {
+            return Ok(None);
+        };
+        let Some(content) = room.get(&kind) else {
+            return Ok(None);
+        };
+        let content = serde_json::from_value(content.clone())
+            .map_err(|e| Error::RoomAccountDataEventDeserialize(kind, e))?;
         Ok(Some(content))
     }
 
