@@ -1,0 +1,42 @@
+// A room has a m.tags account data event but the new user can't join the room
+// so we shouldn't attempt to migrate the tag.
+{
+    "rooms": {
+        "!room1:example.com": [
+            {
+                "type": "m.room.member",
+                "state_key": "@old:example.com",
+                "content": {
+                    "membership": "join"
+                }
+            },
+            {
+                "type": "m.room.join_rules",
+                "state_key": "",
+                "content": {
+                    "join_rule": "invite"
+                }
+            },
+            {
+                "type": "m.room.power_levels",
+                "state_key": "",
+                "content": {
+                    "invite": 100,
+                }
+            }
+        ]
+    },
+    "old_user": {
+        "user_id": "@old:example.com",
+        "room_account_data": {
+            "!room1:example.com": {
+                "m.tag": {
+                    "m.favourite": { }
+                }
+            }
+        }
+    },
+    "new_user": {
+        "user_id": "@new:example.com"
+    }
+}

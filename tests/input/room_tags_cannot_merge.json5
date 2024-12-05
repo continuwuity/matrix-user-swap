@@ -1,0 +1,58 @@
+// some tags can be migrated but other rooms have different values for the same
+// tag and we should emit an error instead of copying the old tag.
+{
+    "rooms": {
+        "!room1:example.com": [
+            {
+                "type": "m.room.member",
+                "state_key": "@old:example.com",
+                "content": {
+                    "membership": "join"
+                }
+            },
+            {
+                "type": "m.room.member",
+                "state_key": "@new:example.com",
+                "content": {
+                    "membership": "join"
+                }
+            }
+        ]
+    },
+    "old_user": {
+        "user_id": "@old:example.com",
+        "room_account_data": {
+            "!room1:example.com": {
+                "m.tag": {
+                    // This can be migrated without problems
+                    "m.favourite": {
+                        "order": 1
+                    },
+                    "u.tag1": {
+                        "key": "value"
+                    },
+                    "u.tag2": {
+                        "key": "value"
+                    }
+                }
+            }
+        }
+    },
+    "new_user": {
+        "user_id": "@new:example.com",
+        "room_account_data": {
+            "!room1:example.com": {
+                "m.tag": {
+                    // No values, but it's still a conflict
+                    "u.tag1": { },
+                    // The values are the same in the old and new users. We
+                    // shouldn't try to migrate this but shouldn't generate
+                    // an error.
+                    "u.tag2": {
+                        "key": "value"
+                    }
+                }
+            }
+        }
+    }
+}

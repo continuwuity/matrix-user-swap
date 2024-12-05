@@ -1,0 +1,44 @@
+// tags from the old user, and the tag sets need to be merged.
+// doesn't have any m.tags data on the migrated rooms so no merge is necessary.
+{
+    "rooms": {
+        "!room1:example.com": [
+            {
+                "type": "m.room.member",
+                "state_key": "@old:example.com",
+                "content": {
+                    "membership": "join"
+                }
+            },
+            {
+                "type": "m.room.member",
+                "state_key": "@new:example.com",
+                "content": {
+                    "membership": "join"
+                }
+            }
+        ]
+    },
+    "old_user": {
+        "user_id": "@old:example.com",
+        "room_account_data": {
+            "!room1:example.com": {
+                "m.tag": {
+                    "m.favourite": {
+                        "order": 1
+                    }
+                }
+            }
+        }
+    },
+    "new_user": {
+        "user_id": "@new:example.com",
+        "room_account_data": {
+            "!room1:example.com": {
+                "m.tag": {
+                    "u.other": { }
+                }
+            }
+        }
+    }
+}
