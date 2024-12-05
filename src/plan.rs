@@ -8,7 +8,9 @@ use ruma::{
         direct::DirectEventContent,
         ignored_user_list::IgnoredUserListEventContent,
         room::{join_rules::JoinRule, member::MembershipState},
-        AnyGlobalAccountDataEventContent, GlobalAccountDataEventType,
+        AnyGlobalAccountDataEventContent, AnyRoomAccountDataEvent,
+        AnyRoomAccountDataEventContent, GlobalAccountDataEventType,
+        RoomAccountDataEventType,
     },
     serde::Raw,
     Int, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomId,
@@ -37,6 +39,9 @@ pub(crate) struct RoomPlan {
     pub(crate) join: bool,
     #[serde(skip_serializing_if = "is_default")]
     pub(crate) power_level: Option<Int>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub(crate) account_data:
+        BTreeMap<RoomAccountDataEventType, Raw<AnyRoomAccountDataEventContent>>,
 }
 
 #[derive(Serialize)]
@@ -195,7 +200,10 @@ pub(crate) enum PlanError<S: StateAccessor> {
 impl RoomPlan {
     /// Returns `true` if no actions need to be taken for this room.
     fn is_empty(&self) -> bool {
-        !self.invite && !self.join && self.power_level.is_none()
+        !self.invite
+            && !self.join
+            && self.power_level.is_none()
+            && self.account_data.is_empty()
     }
 }
 
@@ -320,6 +328,7 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
             invite: need_invite,
             join: need_join,
             power_level: set_power_level,
+            account_data: BTreeMap::new(),
         };
 
         Ok(if !room_plan.is_empty() {
