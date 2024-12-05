@@ -1,12 +1,12 @@
 use std::{
-    collections::{btree_map, BTreeMap, HashSet},
+    collections::{BTreeMap, HashSet},
     fmt,
 };
 
 use ruma::{
     events::{
         direct::DirectEventContent,
-        ignored_user_list::{IgnoredUser, IgnoredUserListEventContent},
+        ignored_user_list::IgnoredUserListEventContent,
         room::{join_rules::JoinRule, member::MembershipState},
         AnyGlobalAccountDataEventContent, GlobalAccountDataEventType,
     },
@@ -17,7 +17,11 @@ use serde::Serialize;
 use thiserror::Error;
 use tracing as t;
 
-use crate::{state::StateAccessor, UserKind};
+use crate::{
+    state::StateAccessor,
+    utils::{merge_json, JsonMap, JsonMergeError},
+    UserKind,
+};
 
 fn is_default<T: Default + Eq>(value: &T) -> bool {
     value == &T::default()
@@ -180,18 +184,12 @@ pub(crate) enum PlanError<S: StateAccessor> {
 
     #[error(
         "old user and new user both have entries in the ignored users list \
-         for the user {user}, but they have different values. The 1.12 spec \
+         for the user {}, but they have different values. The 1.12 spec \
          doesn't specify any semantics for these values, so the old user's \
          entry cannot be merged into the new user's safely. The old value is
-         {old_value}. The new value is {new_value}."
+         {}. The new value is {}.", _0.key, _0.old_value, _0.new_value
     )]
-    IgnoredUserDifferentValues {
-        // String instead of OwnedUserId because we don't try to validate
-        // these.
-        user: String,
-        old_value: serde_json::Value,
-        new_value: serde_json::Value,
-    },
+    IgnoredUserMerge(JsonMergeError),
 }
 
 impl RoomPlan {
@@ -433,11 +431,9 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
     > {
         use IgnoredUsersAccountDataPlanError as Error;
 
-        type Content = BTreeMap<String, Raw<IgnoredUser>>;
-
         let old = self
             .old
-            .get_global_account_data_event::<Content>(
+            .get_global_account_data_event::<JsonMap>(
                 GlobalAccountDataEventType::IgnoredUserList,
             )
             .await
@@ -446,53 +442,25 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
             return Ok(None);
         };
 
-        let mut new = self
+        let new = self
             .new
-            .get_global_account_data_event::<Content>(
+            .get_global_account_data_event::<JsonMap>(
                 GlobalAccountDataEventType::IgnoredUserList,
             )
             .await
             .map_err(|e| Error::GetEvent(UserKind::New, e))?
             .unwrap_or_default();
 
-        let mut changed = false;
+        let (merged, errors) = merge_json(old, new);
 
-        for (user, value) in old {
-            match new.entry(user) {
-                btree_map::Entry::Vacant(e) => {
-                    e.insert(value);
-                    changed = true;
-                }
-                btree_map::Entry::Occupied(e) => {
-                    let old_value = value
-                        .deserialize_as::<serde_json::Value>()
-                        .expect("deserializing Raw to Value should never fail");
-                    let new_value = e
-                        .get()
-                        .deserialize_as::<serde_json::Value>()
-                        .expect("deserializing Raw to Value should never fail");
-                    if old_value != new_value {
-                        self.errors.push(
-                            PlanError::IgnoredUserDifferentValues {
-                                user: e.key().to_owned(),
-                                old_value,
-                                new_value,
-                            },
-                        );
-                    }
-                }
-            }
-        }
+        self.errors.extend(errors.into_iter().map(PlanError::IgnoredUserMerge));
+        let merged = merged.map(|merged| {
+            Raw::new(&merged)
+                .expect("serialization should always succeed")
+                .cast()
+        });
 
-        if changed {
-            Ok(Some(
-                Raw::new(&new)
-                    .expect("serialization should always succeed")
-                    .cast(),
-            ))
-        } else {
-            Ok(None)
-        }
+        Ok(merged)
     }
 }
 

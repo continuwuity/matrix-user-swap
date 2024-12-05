@@ -15,6 +15,7 @@ use wee_woo::ErrorExt;
 
 mod plan;
 mod state;
+mod utils;
 
 use crate::{
     plan::{make_plan, FatalPlanError},

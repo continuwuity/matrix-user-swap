@@ -6,14 +6,14 @@ input_file: tests/input/ignored_users_extra_keys.json5
 {
   "errors": [
     {
-      "IgnoredUserDifferentValues": {
+      "IgnoredUserMerge": {
+        "key": "@user-b:example.com",
         "new_value": {
           "new_key": "new_value"
         },
         "old_value": {
           "old_key": "old_value"
-        },
-        "user": "@user-b:example.com"
+        }
       }
     }
   ],
