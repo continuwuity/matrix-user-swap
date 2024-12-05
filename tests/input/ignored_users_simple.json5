@@ -1,0 +1,18 @@
+// Simplest case of migrating m.ignored_users_list, where the new user doesn't
+// have a m.ignored_users_list event so no merge logic is necessary.
+{
+    "rooms": { },
+    "old_user": {
+        "user_id": "@old:example.com",
+
+        "global_account_data": {
+            "m.ignored_user_list": {
+                "@user-a:example.com": {},
+                "@user-b:example.com": {}
+            }
+        }
+    },
+    "new_user": {
+        "user_id": "@new:example.com"
+    }
+}

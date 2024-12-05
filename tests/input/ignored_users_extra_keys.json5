@@ -1,0 +1,45 @@
+// The 1.12 spec does not define any keys for the m.ignored_users_list value
+// objects. Nevertheless, it is possible to encounter keys, either due to
+// clients violating the spec or future versions of the spec that add them.
+// Generally, we can't do anything with these other than copy them, because we
+// do not know the semantics.
+{
+    "rooms": { },
+    "old_user": {
+        "user_id": "@old:example.com",
+
+        "global_account_data": {
+            "m.ignored_user_list": {
+                // An entry only present in the old list, can be copied
+                "@user-a:example.com": {
+                    "key": "value"
+                },
+                // An entry present in both the old and new lists, with
+                // different values. We should emit an error.
+                "@user-b:example.com": {
+                    "old_key": "old_value"
+                },
+                // An entry present in both the old and new lists, with
+                // the same values. We don't have to go anything, and shouldn't
+                // emit an error.
+                "@user-c:example.com": {
+                    "key": "value"
+                }
+            }
+        }
+    },
+    "new_user": {
+        "user_id": "@new:example.com",
+
+        "global_account_data": {
+            "m.ignored_user_list": {
+                "@user-b:example.com": {
+                    "new_key": "new_value"
+                },
+                "@user-c:example.com": {
+                    "key": "value"
+                }
+            }
+        }
+    }
+}

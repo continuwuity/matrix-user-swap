@@ -1,0 +1,25 @@
+// Migrating m.ignored_users_list, where the new user already has a
+// m.ignored_users_list, containing some of the same users as the old user.
+{
+    "rooms": { },
+    "old_user": {
+        "user_id": "@old:example.com",
+
+        "global_account_data": {
+            "m.ignored_user_list": {
+                "@user-a:example.com": {},
+                "@user-b:example.com": {}
+            }
+        }
+    },
+    "new_user": {
+        "user_id": "@new:example.com",
+
+        "global_account_data": {
+            "m.ignored_user_list": {
+                "@user-a:example.com": {},
+                "@user-c:example.com": {}
+            }
+        }
+    }
+}
