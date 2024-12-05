@@ -232,9 +232,8 @@ impl StateAccessor for ClientStateAccessor {
 
         let response = match response {
             Ok(response) => response,
-            // Spec says that "The room has no state with the given type or
-            // key." is 404, but does not specify a errcode, so this
-            // is the best we can do.
+            // Spec mentions a 404 response, but doesn't specify errcode or
+            // semantics. This is the best we can do.
             Err(e) if e.error_kind() == Some(&ErrorKind::NotFound) => {
                 return Ok(None)
             }
