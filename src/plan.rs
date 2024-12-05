@@ -1,11 +1,12 @@
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::{btree_map, BTreeMap, HashSet},
     fmt,
 };
 
 use ruma::{
     events::{
         direct::DirectEventContent,
+        ignored_user_list::{IgnoredUser, IgnoredUserListEventContent},
         room::{join_rules::JoinRule, member::MembershipState},
         AnyGlobalAccountDataEventContent, GlobalAccountDataEventType,
     },
@@ -125,6 +126,18 @@ pub(crate) enum DirectAccountDataPlanError<S: StateAccessor> {
     ),
 }
 
+/// Fatal errors migrating `m.ignored_user_list` global account data event.
+#[derive(Error, Debug, Serialize)]
+pub(crate) enum IgnoredUsersAccountDataPlanError<S: StateAccessor> {
+    #[error("failed to get ignored users list for {_0} user")]
+    GetEvent(
+        UserKind,
+        #[source]
+        #[serde(skip)]
+        S::Error,
+    ),
+}
+
 /// Non-fatal errors determining a migration plan.
 ///
 /// These may block fully migrating particular rooms or data, but are not fatal
@@ -138,6 +151,12 @@ pub(crate) enum PlanError<S: StateAccessor> {
     #[error("cannot migrate direct message mapping")]
     #[serde(bound(serialize = "DirectAccountDataPlanError<S>: Serialize"))]
     DirectAccountDataFailed(#[from] DirectAccountDataPlanError<S>),
+
+    #[error("cannot migrate ignored users list")]
+    #[serde(bound(
+        serialize = "IgnoredUsersAccountDataPlanError<S>: Serialize"
+    ))]
+    IgnoredUsersAccountDataFailed(#[from] IgnoredUsersAccountDataPlanError<S>),
 
     #[error(
         "failed to get alias for room {_0}. This is mostly inconsequential, \
@@ -157,6 +176,21 @@ pub(crate) enum PlanError<S: StateAccessor> {
     CannotCopyPowerLevel {
         room_id: OwnedRoomId,
         old_power_level: Int,
+    },
+
+    #[error(
+        "old user and new user both have entries in the ignored users list \
+         for the user {user}, but they have different values. The 1.12 spec \
+         doesn't specify any semantics for these values, so the old user's \
+         entry cannot be merged into the new user's safely. The old value is
+         {old_value}. The new value is {new_value}."
+    )]
+    IgnoredUserDifferentValues {
+        // String instead of OwnedUserId because we don't try to validate
+        // these.
+        user: String,
+        old_value: serde_json::Value,
+        new_value: serde_json::Value,
     },
 }
 
@@ -374,6 +408,92 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
             Ok(None)
         }
     }
+
+    async fn plan_account_data_ignored_users(&mut self) {
+        let result = self.plan_account_data_ignored_users_inner().await;
+        match result {
+            Ok(Some(content)) => {
+                self.plan.global_account_data.insert(
+                    GlobalAccountDataEventType::IgnoredUserList,
+                    content.cast(),
+                );
+            }
+            Ok(None) => (),
+            Err(e) => {
+                self.errors.push(e.into());
+            }
+        }
+    }
+
+    async fn plan_account_data_ignored_users_inner(
+        &mut self,
+    ) -> Result<
+        Option<Raw<IgnoredUserListEventContent>>,
+        IgnoredUsersAccountDataPlanError<S>,
+    > {
+        use IgnoredUsersAccountDataPlanError as Error;
+
+        type Content = BTreeMap<String, Raw<IgnoredUser>>;
+
+        let old = self
+            .old
+            .get_global_account_data_event::<Content>(
+                GlobalAccountDataEventType::IgnoredUserList,
+            )
+            .await
+            .map_err(|e| Error::GetEvent(UserKind::Old, e))?;
+        let Some(old) = old else {
+            return Ok(None);
+        };
+
+        let mut new = self
+            .new
+            .get_global_account_data_event::<Content>(
+                GlobalAccountDataEventType::IgnoredUserList,
+            )
+            .await
+            .map_err(|e| Error::GetEvent(UserKind::New, e))?
+            .unwrap_or_default();
+
+        let mut changed = false;
+
+        for (user, value) in old {
+            match new.entry(user) {
+                btree_map::Entry::Vacant(e) => {
+                    e.insert(value);
+                    changed = true;
+                }
+                btree_map::Entry::Occupied(e) => {
+                    let old_value = value
+                        .deserialize_as::<serde_json::Value>()
+                        .expect("deserializing Raw to Value should never fail");
+                    let new_value = e
+                        .get()
+                        .deserialize_as::<serde_json::Value>()
+                        .expect("deserializing Raw to Value should never fail");
+                    if old_value != new_value {
+                        self.errors.push(
+                            PlanError::IgnoredUserDifferentValues {
+                                user: e.key().to_owned(),
+                                old_value,
+                                new_value,
+                            },
+                        );
+                    }
+                }
+            }
+        }
+
+        if changed {
+            Ok(Some(
+                Raw::new(&new)
+                    .expect("serialization should always succeed")
+                    .cast(),
+            ))
+        } else {
+            Ok(None)
+        }
+    }
 }
 
 pub(crate) async fn make_plan<S: StateAccessor>(
@@ -430,6 +550,7 @@ pub(crate) async fn make_plan<S: StateAccessor>(
     }
 
     state.plan_account_data_direct().await;
+    state.plan_account_data_ignored_users().await;
 
     Ok((state.plan, state.errors))
 }

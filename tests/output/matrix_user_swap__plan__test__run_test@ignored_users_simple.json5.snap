@@ -6,6 +6,12 @@ input_file: tests/input/ignored_users_simple.json5
 {
   "errors": [],
   "plan": {
+    "global_account_data": {
+      "m.ignored_user_list": {
+        "@user-a:example.com": {},
+        "@user-b:example.com": {}
+      }
+    },
     "new_user_id": "@new:example.com",
     "rooms": {}
   }
