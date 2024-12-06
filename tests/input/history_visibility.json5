@@ -1,0 +1,105 @@
+// On rooms where the new user will not have access to the same room history
+// that the old user did, we should warn the user.
+{
+    "rooms": {
+        // No problem with these two, all history is visible to the new user
+        "!word-readable:example.com": [
+            {
+                "type": "m.room.member",
+                "state_key": "@old:example.com",
+                "content": {
+                    "membership": "join"
+                }
+            },
+            {
+                "type": "m.room.history_visibility",
+                "state_key": "",
+                "content": {
+                    "history_visibility": "world_readable"
+                }
+            }
+        ],
+        "!shared:example.com": [
+            {
+                "type": "m.room.member",
+                "state_key": "@old:example.com",
+                "content": {
+                    "membership": "join"
+                }
+            },
+            {
+                "type": "m.room.history_visibility",
+                "state_key": "",
+                "content": {
+                    "history_visibility": "shared"
+                }
+            }
+        ],
+
+        // In these two, some history may be lost
+        "!invited:example.com": [
+            {
+                "type": "m.room.member",
+                "state_key": "@old:example.com",
+                "content": {
+                    "membership": "join"
+                }
+            },
+            {
+                "type": "m.room.history_visibility",
+                "state_key": "",
+                "content": {
+                    "history_visibility": "invited"
+                }
+            }
+        ],
+        "!joined:example.com": [
+            {
+                "type": "m.room.member",
+                "state_key": "@old:example.com",
+                "content": {
+                    "membership": "join"
+                }
+            },
+            {
+                "type": "m.room.history_visibility",
+                "state_key": "",
+                "content": {
+                    "history_visibility": "joined"
+                }
+            }
+        ],
+
+        // We want to warn even when the new user is already joined, because
+        // they may have joined later than the old user.
+        "!already-joined:example.com": [
+            {
+                "type": "m.room.member",
+                "state_key": "@old:example.com",
+                "content": {
+                    "membership": "join"
+                }
+            },
+            {
+                "type": "m.room.member",
+                "state_key": "@new:example.com",
+                "content": {
+                    "membership": "join"
+                }
+            },
+            {
+                "type": "m.room.history_visibility",
+                "state_key": "",
+                "content": {
+                    "history_visibility": "joined"
+                }
+            }
+        ]
+    },
+    "old_user": {
+        "user_id": "@old:example.com"
+    },
+    "new_user": {
+        "user_id": "@new:example.com"
+    }
+}

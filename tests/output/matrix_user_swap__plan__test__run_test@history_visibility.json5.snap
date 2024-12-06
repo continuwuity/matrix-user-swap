@@ -1,0 +1,29 @@
+---
+source: src/plan.rs
+expression: "json!({ \"errors\": errors, \"plan\": plan, })"
+input_file: tests/input/history_visibility.json5
+---
+{
+  "errors": [],
+  "plan": {
+    "new_user_id": "@new:example.com",
+    "rooms": {
+      "!invited:example.com": {
+        "invite": true,
+        "join": true
+      },
+      "!joined:example.com": {
+        "invite": true,
+        "join": true
+      },
+      "!shared:example.com": {
+        "invite": true,
+        "join": true
+      },
+      "!word-readable:example.com": {
+        "invite": true,
+        "join": true
+      }
+    }
+  }
+}
