@@ -1,0 +1,44 @@
+// When enabling the "leave" setting, the old user should leave all rooms
+// that are fully migrated. In this test case, all rooms can be fully migrated.
+{
+    "settings": {
+        "leave": true
+    },
+    "rooms": {
+        // A room that the new user will be invited to and join
+        "!join:example.com": [
+            {
+                "type": "m.room.member",
+                "state_key": "@old:example.com",
+                "content": {
+                    "membership": "join"
+                }
+            }
+        ],
+
+        // A room that the new user is already in, so nothing should happen
+        // except for the old user leaving.
+        "!room1:example.com": [
+            {
+                "type": "m.room.member",
+                "state_key": "@old:example.com",
+                "content": {
+                    "membership": "join"
+                }
+            },
+            {
+                "type": "m.room.member",
+                "state_key": "@new:example.com",
+                "content": {
+                    "membership": "join"
+                }
+            }
+        ]
+    },
+    "old_user": {
+        "user_id": "@old:example.com"
+    },
+    "new_user": {
+        "user_id": "@new:example.com"
+    }
+}
