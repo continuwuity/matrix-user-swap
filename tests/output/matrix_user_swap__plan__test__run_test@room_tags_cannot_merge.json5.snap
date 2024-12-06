@@ -14,7 +14,9 @@ input_file: tests/input/room_tags_cannot_merge.json5
             "key": "value"
           }
         },
-        "room_id": "!room1:example.com"
+        "room": {
+          "id": "!room1:example.com"
+        }
       }
     }
   ],

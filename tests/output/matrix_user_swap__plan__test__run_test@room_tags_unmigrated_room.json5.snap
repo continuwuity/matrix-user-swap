@@ -7,7 +7,9 @@ input_file: tests/input/room_tags_unmigrated_room.json5
   "errors": [
     {
       "RoomFailed": [
-        "!room1:example.com",
+        {
+          "id": "!room1:example.com"
+        },
         "CannotInvite"
       ]
     }

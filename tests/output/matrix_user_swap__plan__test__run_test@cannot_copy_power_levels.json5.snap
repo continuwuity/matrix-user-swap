@@ -8,19 +8,25 @@ input_file: tests/input/cannot_copy_power_levels.json5
     {
       "CannotCopyPowerLevel": {
         "old_power_level": 50,
-        "room_id": "!already-joined:example.com"
+        "room": {
+          "id": "!already-joined:example.com"
+        }
       }
     },
     {
       "CannotCopyPowerLevel": {
         "old_power_level": 50,
-        "room_id": "!invite:example.com"
+        "room": {
+          "id": "!invite:example.com"
+        }
       }
     },
     {
       "CannotCopyPowerLevel": {
         "old_power_level": 50,
-        "room_id": "!public:example.com"
+        "room": {
+          "id": "!public:example.com"
+        }
       }
     }
   ],

@@ -7,13 +7,17 @@ input_file: tests/input/banned.json5
   "errors": [
     {
       "RoomFailed": [
-        "!mod-room:example.com",
+        {
+          "id": "!mod-room:example.com"
+        },
         "Banned"
       ]
     },
     {
       "RoomFailed": [
-        "!simple-room:example.com",
+        {
+          "id": "!simple-room:example.com"
+        },
         "Banned"
       ]
     }

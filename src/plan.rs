@@ -21,7 +21,7 @@ use tracing as t;
 
 use crate::{
     state::StateAccessor,
-    utils::{merge_json, JsonMap, JsonMergeError},
+    utils::{merge_json, JsonMap, JsonMergeError, RoomIdentity},
     UserKind,
 };
 
@@ -31,6 +31,7 @@ fn is_default<T: Default + Eq>(value: &T) -> bool {
 
 #[derive(Serialize)]
 pub(crate) struct RoomPlan {
+    // TODO: store this as RoomIdentity instead of separating the alias and id?
     #[serde(skip_serializing_if = "is_default")]
     pub(crate) alias: Option<OwnedRoomAliasId>,
     #[serde(default, skip_serializing_if = "is_default")]
@@ -167,16 +168,16 @@ pub(crate) enum IgnoredUsersAccountDataPlanError<S: StateAccessor> {
 pub(crate) enum PlanError<S: StateAccessor> {
     #[error("cannot migrate room {_0}")]
     #[serde(bound(serialize = "RoomPlanError<S>: Serialize"))]
-    RoomFailed(OwnedRoomId, #[source] RoomPlanError<S>),
+    RoomFailed(RoomIdentity, #[source] RoomPlanError<S>),
 
     #[error("cannot migrate tags in room {_0}")]
     #[serde(bound(serialize = "RoomTagsPlanError<S>: Serialize"))]
-    RoomTagsFailed(OwnedRoomId, #[source] RoomTagsPlanError<S>),
+    RoomTagsFailed(RoomIdentity, #[source] RoomTagsPlanError<S>),
 
-    #[error("cannot migrate {} tag in room {}. Both the old and new users have a tag with this key, but they have different values. Old value is {}. New value is {}.", error.key, room_id, error.old_value, error.new_value)]
+    #[error("cannot migrate {} tag in room {}. Both the old and new users have a tag with this key, but they have different values. Old value is {}. New value is {}.", error.key, room, error.old_value, error.new_value)]
     #[serde(bound(serialize = "RoomTagsPlanError<S>: Serialize"))]
     RoomTagMerge {
-        room_id: OwnedRoomId,
+        room: RoomIdentity,
         error: JsonMergeError,
     },
 
@@ -203,10 +204,10 @@ pub(crate) enum PlanError<S: StateAccessor> {
 
     #[error(
         "old user does not have permission to copy their power level \
-         ({old_power_level}) to new user in room {room_id}"
+         ({old_power_level}) to new user in room {room}"
     )]
     CannotCopyPowerLevel {
-        room_id: OwnedRoomId,
+        room: RoomIdentity,
         old_power_level: Int,
     },
 
@@ -244,38 +245,37 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
     }
 
     async fn plan_room(&mut self, room_id: OwnedRoomId) {
-        let result = self.plan_room_inner(&room_id).await;
+        // TODO: skip fetching the alias when we don't need it (this can happen
+        // if a room is already fully migrated and we don't need to print an
+        // error)
+        let room = RoomIdentity::new(self.old, room_id.clone())
+            .await
+            .unwrap_or_else(|(room, e)| {
+                self.errors.push(PlanError::AliasFailed(room_id.clone(), e));
+                room
+            });
+
+        let result = self.plan_room_inner(&room).await;
         match result {
             Ok(Some(plan)) => {
                 self.plan.rooms.insert(room_id, plan);
             }
             Ok(None) => (),
             Err(e) => {
-                self.errors.push(PlanError::RoomFailed(room_id, e));
+                self.errors.push(PlanError::RoomFailed(room, e));
             }
         }
     }
 
     async fn plan_room_inner(
         &mut self,
-        room_id: &RoomId,
+        room: &RoomIdentity,
     ) -> Result<Option<RoomPlan>, RoomPlanError<S>> {
         use RoomPlanError as Error;
 
-        // TODO: skip fetching the alias when we don't need it (this can happen
-        // if a room is already fully migrated and we don't need to print an
-        // error)
-        let alias = match self.old.get_room_alias(room_id).await {
-            Ok(alias) => alias,
-            Err(e) => {
-                self.errors.push(PlanError::AliasFailed(room_id.to_owned(), e));
-                None
-            }
-        };
-
         let power_levels = self
             .old
-            .get_power_levels(room_id)
+            .get_power_levels(&room.id)
             .await
             .map_err(Error::GetPowerLevels)?;
 
@@ -289,7 +289,7 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
                 Some(old_power_level)
             } else {
                 self.errors.push(PlanError::CannotCopyPowerLevel {
-                    room_id: room_id.to_owned(),
+                    room: room.clone(),
                     old_power_level,
                 });
                 None
@@ -298,14 +298,14 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
             None
         };
 
-        let need_join = !self.new_joined_rooms.contains(room_id);
+        let need_join = !self.new_joined_rooms.contains(&room.id);
 
         let need_invite = if !need_join {
             false
         } else {
             let membership = self
                 .old
-                .get_membership(room_id, &self.new_user_id)
+                .get_membership(&room.id, &self.new_user_id)
                 .await
                 .map_err(Error::GetMembership)?
                 .unwrap_or(MembershipState::Leave);
@@ -316,7 +316,7 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
 
             let server_acl = self
                 .old
-                .get_server_acl(room_id)
+                .get_server_acl(&room.id)
                 .await
                 .map_err(Error::GetServerAcl)?;
 
@@ -330,7 +330,7 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
 
             let join_rule = self
                 .old
-                .get_join_rule(room_id)
+                .get_join_rule(&room.id)
                 .await
                 .map_err(Error::GetJoinRule)?;
             // TODO: handle 'allow' field of 'm.room.join_rules', which could
@@ -348,10 +348,10 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
 
         let mut account_data = BTreeMap::new();
 
-        self.plan_room_account_data_tags(room_id, &mut account_data).await;
+        self.plan_room_account_data_tags(room, &mut account_data).await;
 
         let room_plan = RoomPlan {
-            alias,
+            alias: room.alias.clone(),
             invite: need_invite,
             join: need_join,
             power_level: set_power_level,
@@ -367,13 +367,13 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
 
     async fn plan_room_account_data_tags(
         &mut self,
-        room_id: &RoomId,
+        room: &RoomIdentity,
         account_data: &mut BTreeMap<
             RoomAccountDataEventType,
             Raw<AnyRoomAccountDataEventContent>,
         >,
     ) {
-        match self.plan_room_account_data_tags_inner(room_id).await {
+        match self.plan_room_account_data_tags_inner(room).await {
             Ok(Some(content)) => {
                 account_data
                     .insert(RoomAccountDataEventType::Tag, content.cast());
@@ -381,21 +381,21 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
             Ok(None) => (),
             Err(error) => {
                 self.errors
-                    .push(PlanError::RoomTagsFailed(room_id.to_owned(), error));
+                    .push(PlanError::RoomTagsFailed(room.clone(), error));
             }
         }
     }
 
     async fn plan_room_account_data_tags_inner(
         &mut self,
-        room_id: &RoomId,
+        room: &RoomIdentity,
     ) -> Result<Option<Raw<TagEventContent>>, RoomTagsPlanError<S>> {
         use RoomTagsPlanError as Error;
 
         let old = self
             .old
             .get_room_account_data_event::<JsonMap>(
-                room_id,
+                &room.id,
                 RoomAccountDataEventType::Tag,
             )
             .await
@@ -407,7 +407,7 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
         let new = self
             .new
             .get_room_account_data_event::<JsonMap>(
-                room_id,
+                &room.id,
                 RoomAccountDataEventType::Tag,
             )
             .await
@@ -417,7 +417,7 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
         let (merged, errors) = merge_json(old, new);
 
         let errors = errors.into_iter().map(|error| PlanError::RoomTagMerge {
-            room_id: room_id.to_owned(),
+            room: room.clone(),
             error,
         });
         self.errors.extend(errors);

@@ -7,19 +7,25 @@ input_file: tests/input/acl_banned.json5
   "errors": [
     {
       "RoomFailed": [
-        "!allow:example.com",
+        {
+          "id": "!allow:example.com"
+        },
         "AclBanned"
       ]
     },
     {
       "RoomFailed": [
-        "!deny-wildcard:example.com",
+        {
+          "id": "!deny-wildcard:example.com"
+        },
         "AclBanned"
       ]
     },
     {
       "RoomFailed": [
-        "!deny:example.com",
+        {
+          "id": "!deny:example.com"
+        },
         "AclBanned"
       ]
     }

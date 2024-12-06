@@ -1,10 +1,15 @@
-use std::collections::{btree_map, BTreeMap};
+use std::{
+    collections::{btree_map, BTreeMap},
+    fmt,
+};
 
-use ruma::serde::Raw;
+use ruma::{serde::Raw, OwnedRoomAliasId, OwnedRoomId};
 use serde::Serialize;
 #[cfg(test)]
 use serde_json::json;
 use thiserror::Error;
+
+use crate::state::StateAccessor;
 
 pub(crate) type JsonMap = BTreeMap<String, Raw<serde_json::Value>>;
 
@@ -66,6 +71,53 @@ pub(crate) fn merge_json(
     };
 
     (new, errors)
+}
+
+/// Room id along with the rooms canonical alias, if known.
+///
+/// This is used to identify rooms in a more human-readable way in logs.
+#[derive(Clone, Debug, Serialize, Eq, PartialEq)]
+pub(crate) struct RoomIdentity {
+    pub(crate) id: OwnedRoomId,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) alias: Option<OwnedRoomAliasId>,
+}
+
+impl RoomIdentity {
+    /// Constructs a [`RoomIdentity`], possibly with an alias fetched from
+    /// `state`.
+    ///
+    /// If fetching the alias fails, [`Err`] is returned, including the error
+    /// and the [`RoomIdentity`] without an alias. Rooms that do not have an
+    /// alias are not an error.
+    pub(crate) async fn new<S: StateAccessor>(
+        state: &S,
+        id: OwnedRoomId,
+    ) -> Result<RoomIdentity, (RoomIdentity, S::Error)> {
+        match state.get_room_alias(&id).await {
+            Ok(alias) => Ok(RoomIdentity {
+                id,
+                alias,
+            }),
+            Err(e) => Err((
+                RoomIdentity {
+                    id,
+                    alias: None,
+                },
+                e,
+            )),
+        }
+    }
+}
+
+impl fmt::Display for RoomIdentity {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if let Some(alias) = &self.alias {
+            write!(f, "{} ({})", alias, self.id)
+        } else {
+            write!(f, "{}", self.id)
+        }
+    }
 }
 
 #[cfg(test)]
