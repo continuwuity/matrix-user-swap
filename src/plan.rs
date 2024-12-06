@@ -754,18 +754,28 @@ impl fmt::Display for Plan {
 
 #[cfg(test)]
 mod test {
-    use std::path::Path;
+    use std::{fs, path::Path};
 
     use insta::assert_json_snapshot;
+    use serde::Deserialize;
     use serde_json::json;
 
     use super::*;
     use crate::state::mock::{MockState, MockStateAccessor};
 
+    #[derive(Deserialize)]
+    struct TestInput {
+        #[serde(flatten)]
+        state: MockState,
+    }
+
     async fn run_test(path: &Path) {
-        let state = MockState::new(path).unwrap();
-        let old = MockStateAccessor::new(UserKind::Old, &state);
-        let new = MockStateAccessor::new(UserKind::New, &state);
+        let input_source = fs::read(path).unwrap();
+        let input =
+            serde_json5::from_slice::<TestInput>(&input_source).unwrap();
+
+        let old = MockStateAccessor::new(UserKind::Old, &input.state);
+        let new = MockStateAccessor::new(UserKind::New, &input.state);
         let (plan, errors) = make_plan(&old, &new).await.unwrap();
 
         insta::with_settings!({ snapshot_path => "../tests/output" }, {

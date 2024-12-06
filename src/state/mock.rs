@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fs, io, path::Path};
+use std::collections::HashMap;
 
 use ruma::{
     events::{
@@ -59,34 +59,22 @@ pub(crate) struct MockStateAccessor<'a> {
 }
 
 #[derive(Error, Debug)]
-pub(crate) enum LoadMockStateError {
-    #[error("error reading state file")]
-    Read(#[source] io::Error),
-
-    #[error("error deserializing state file")]
-    Deserialize(#[source] serde_json5::Error),
-
-    #[error(
-        "duplicate state events with type {kind} and state key {state_key}"
-    )]
-    DuplicateState {
-        kind: StateEventType,
-        state_key: String,
-    },
+#[error("duplicate state events with type {kind} and state key {state_key}")]
+pub(crate) struct DuplicateStateError {
+    kind: StateEventType,
+    state_key: String,
 }
 
 impl TryFrom<RawRoom> for Room {
-    type Error = LoadMockStateError;
+    type Error = DuplicateStateError;
 
-    fn try_from(raw: RawRoom) -> Result<Room, LoadMockStateError> {
-        use LoadMockStateError as Error;
-
+    fn try_from(raw: RawRoom) -> Result<Room, DuplicateStateError> {
         let mut state_events = HashMap::new();
         for event in raw.state_events {
             let key = (event.kind, event.state_key);
             let duplicate = state_events.insert(key.clone(), event.content);
             if duplicate.is_some() {
-                return Err(Error::DuplicateState {
+                return Err(DuplicateStateError {
                     kind: key.0,
                     state_key: key.1,
                 });
@@ -95,17 +83,6 @@ impl TryFrom<RawRoom> for Room {
         Ok(Room {
             state_events,
         })
-    }
-}
-
-impl MockState {
-    pub(crate) fn new<P: AsRef<Path>>(
-        path: P,
-    ) -> Result<MockState, LoadMockStateError> {
-        use LoadMockStateError as Error;
-
-        let contents = fs::read(path).map_err(Error::Read)?;
-        serde_json5::from_slice(&contents).map_err(Error::Deserialize)
     }
 }
 
