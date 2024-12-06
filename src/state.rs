@@ -3,6 +3,7 @@ use ruma::{
     client,
     events::{
         room::{
+            history_visibility::HistoryVisibility,
             join_rules::{JoinRule, RoomJoinRulesEventContent},
             member::MembershipState,
             power_levels::{
@@ -133,6 +134,25 @@ pub(crate) trait StateAccessor {
             )
             .await?;
         Ok(content)
+    }
+
+    async fn get_history_visibility(
+        &self,
+        room_id: &RoomId,
+    ) -> Result<Option<HistoryVisibility>, Self::Error> {
+        #[derive(Deserialize)]
+        struct Extract {
+            history_visibility: Option<HistoryVisibility>,
+        }
+
+        let extract = self
+            .get_state_event::<Extract>(
+                room_id,
+                StateEventType::RoomHistoryVisibility,
+                "".to_owned(),
+            )
+            .await?;
+        Ok(extract.and_then(|extract| extract.history_visibility))
     }
 }
 

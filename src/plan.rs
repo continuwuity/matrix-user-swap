@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     collections::{BTreeMap, HashSet},
     fmt,
 };
@@ -7,7 +8,10 @@ use ruma::{
     events::{
         direct::DirectEventContent,
         ignored_user_list::IgnoredUserListEventContent,
-        room::{join_rules::JoinRule, member::MembershipState},
+        room::{
+            history_visibility::HistoryVisibility, join_rules::JoinRule,
+            member::MembershipState,
+        },
         tag::TagEventContent,
         AnyGlobalAccountDataEventContent, AnyRoomAccountDataEventContent,
         GlobalAccountDataEventType, RoomAccountDataEventType,
@@ -212,6 +216,26 @@ pub(crate) enum PlanError<S: StateAccessor> {
     },
 
     #[error(
+        "failed to get history visibility state for room {room}. Unable to \
+         determine whether message history visible to the old user in this \
+         room may be hidden from the new user and lost if the old user leaves."
+    )]
+    GetHistoryVisibility {
+        room: RoomIdentity,
+        #[serde(skip)]
+        error: S::Error,
+    },
+
+    #[error(
+        "some of the message history visible to the old user in room {room} may not be visible to the new user, because the room has restricted visible message history to only messages sent after a user {}. If the old user leaves this room, some message history may be lost.{}", describe_history_visibility(visibility), if *already_joined { " The new user has already joined this room, but may have joined it later than the old user." } else { "" }
+    )]
+    RestrictedHistoryVisibility {
+        room: RoomIdentity,
+        visibility: HistoryVisibility,
+        already_joined: bool,
+    },
+
+    #[error(
         "old user and new user both have entries in the ignored users list \
          for the user {}, but they have different values. The 1.12 spec \
          doesn't specify any semantics for these values, so the old user's \
@@ -219,6 +243,33 @@ pub(crate) enum PlanError<S: StateAccessor> {
          {}. The new value is {}.", _0.key, _0.old_value, _0.new_value
     )]
     IgnoredUserMerge(JsonMergeError),
+}
+
+fn describe_history_visibility(
+    visibility: &HistoryVisibility,
+) -> Cow<'static, str> {
+    match visibility {
+        HistoryVisibility::WorldReadable => {
+            "allows even users that are not in the room to see message history"
+                .into()
+        }
+        HistoryVisibility::Shared => "allows users to see all message history \
+                                      after they join the room"
+            .into(),
+        HistoryVisibility::Invited => "restricts visible history to only \
+                                       messages that were sent after a user \
+                                       was invited"
+            .into(),
+        HistoryVisibility::Joined => "restricted visible history to only \
+                                      messages that were sent after a user \
+                                      joined"
+            .into(),
+        _ => format!(
+            "has an unrecognized history visibility setting {:?}",
+            visibility.as_str()
+        )
+        .into(),
+    }
 }
 
 impl RoomPlan {
@@ -350,6 +401,8 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
 
         self.plan_room_account_data_tags(room, &mut account_data).await;
 
+        self.check_history_visibility(room, need_join).await;
+
         let room_plan = RoomPlan {
             alias: room.alias.clone(),
             invite: need_invite,
@@ -428,6 +481,41 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
         });
 
         Ok(merged)
+    }
+
+    async fn check_history_visibility(
+        &mut self,
+        room: &RoomIdentity,
+        need_join: bool,
+    ) {
+        let result = self.check_history_visibility_inner(room, need_join).await;
+        if let Err(e) = result {
+            self.errors.push(e);
+        }
+    }
+
+    async fn check_history_visibility_inner(
+        &self,
+        room: &RoomIdentity,
+        need_join: bool,
+    ) -> Result<(), PlanError<S>> {
+        let visibility =
+            self.old.get_history_visibility(&room.id).await.map_err(
+                |error| PlanError::GetHistoryVisibility {
+                    room: room.clone(),
+                    error,
+                },
+            )?;
+        match visibility {
+            Some(HistoryVisibility::WorldReadable)
+            | Some(HistoryVisibility::Shared)
+            | None => Ok(()),
+            Some(visibility) => Err(PlanError::RestrictedHistoryVisibility {
+                room: room.clone(),
+                visibility,
+                already_joined: !need_join,
+            }),
+        }
     }
 
     async fn plan_account_data_direct(&mut self) {

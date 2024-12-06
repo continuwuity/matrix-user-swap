@@ -4,7 +4,35 @@ expression: "json!({ \"errors\": errors, \"plan\": plan, })"
 input_file: tests/input/history_visibility.json5
 ---
 {
-  "errors": [],
+  "errors": [
+    {
+      "RestrictedHistoryVisibility": {
+        "already_joined": true,
+        "room": {
+          "id": "!already-joined:example.com"
+        },
+        "visibility": "joined"
+      }
+    },
+    {
+      "RestrictedHistoryVisibility": {
+        "already_joined": false,
+        "room": {
+          "id": "!invited:example.com"
+        },
+        "visibility": "invited"
+      }
+    },
+    {
+      "RestrictedHistoryVisibility": {
+        "already_joined": false,
+        "room": {
+          "id": "!joined:example.com"
+        },
+        "visibility": "joined"
+      }
+    }
+  ],
   "plan": {
     "new_user_id": "@new:example.com",
     "rooms": {
