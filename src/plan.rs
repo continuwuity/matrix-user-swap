@@ -42,6 +42,8 @@ pub(crate) struct RoomPlan {
     pub(crate) invite: bool,
     #[serde(default, skip_serializing_if = "is_default")]
     pub(crate) join: bool,
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub(crate) leave: bool,
     #[serde(skip_serializing_if = "is_default")]
     pub(crate) power_level: Option<Int>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
@@ -277,6 +279,7 @@ impl RoomPlan {
     fn is_empty(&self) -> bool {
         !self.invite
             && !self.join
+            && !self.leave
             && self.power_level.is_none()
             && self.account_data.is_empty()
     }
@@ -407,6 +410,7 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
             alias: room.alias.clone(),
             invite: need_invite,
             join: need_join,
+            leave: false,
             power_level: set_power_level,
             account_data,
         };
@@ -724,6 +728,9 @@ impl fmt::Display for Plan {
             }
             if room.join {
                 write!(f, "join")?;
+            }
+            if room.leave {
+                write!(f, "leave")?;
             }
             write!(f, ")")?;
             if let Some(alias) = &room.alias {
