@@ -18,7 +18,7 @@ mod state;
 mod utils;
 
 use crate::{
-    plan::{make_plan, FatalPlanError},
+    plan::{make_plan, FatalPlanError, PlanSettings},
     state::{ClientStateAccessor, ClientStateError},
 };
 
@@ -89,6 +89,8 @@ async fn try_main() -> Result<(), Error> {
     init_logging()?;
     let cli = Cli::parse();
 
+    let settings = PlanSettings::default();
+
     let http_client = client::http_client::Reqwest::new();
 
     let old_client = client::Client::builder()
@@ -111,7 +113,7 @@ async fn try_main() -> Result<(), Error> {
         .await
         .map_err(|e| Error::InitClientState(UserKind::New, e))?;
 
-    let (plan, errors) = make_plan(&old, &new).await?;
+    let (plan, errors) = make_plan(settings, &old, &new).await?;
 
     for error in errors {
         t::error!("{}", error.display_with_sources("\n  Caused by: "));

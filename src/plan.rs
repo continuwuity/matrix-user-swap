@@ -19,7 +19,7 @@ use ruma::{
     serde::Raw,
     Int, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomId,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing as t;
 
@@ -32,6 +32,9 @@ use crate::{
 fn is_default<T: Default + Eq>(value: &T) -> bool {
     value == &T::default()
 }
+
+#[derive(Default, Deserialize)]
+pub(crate) struct PlanSettings {}
 
 #[derive(Serialize)]
 pub(crate) struct RoomPlan {
@@ -63,6 +66,7 @@ pub(crate) struct Plan {
 }
 
 struct MakePlanState<'a, S: StateAccessor> {
+    settings: PlanSettings,
     old: &'a S,
     new: &'a S,
     new_user_id: OwnedUserId,
@@ -658,6 +662,7 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
 }
 
 pub(crate) async fn make_plan<S: StateAccessor>(
+    settings: PlanSettings,
     old: &S,
     new: &S,
 ) -> Result<(Plan, Vec<PlanError<S>>), FatalPlanError<S>> {
@@ -692,6 +697,7 @@ pub(crate) async fn make_plan<S: StateAccessor>(
     t::info!("need to evaluate {} rooms", old_joined_rooms.len());
 
     let mut state = MakePlanState {
+        settings,
         old,
         new,
         old_user_id,
@@ -765,6 +771,8 @@ mod test {
 
     #[derive(Deserialize)]
     struct TestInput {
+        #[serde(default)]
+        settings: PlanSettings,
         #[serde(flatten)]
         state: MockState,
     }
@@ -776,7 +784,8 @@ mod test {
 
         let old = MockStateAccessor::new(UserKind::Old, &input.state);
         let new = MockStateAccessor::new(UserKind::New, &input.state);
-        let (plan, errors) = make_plan(&old, &new).await.unwrap();
+        let (plan, errors) =
+            make_plan(input.settings, &old, &new).await.unwrap();
 
         insta::with_settings!({ snapshot_path => "../tests/output" }, {
             assert_json_snapshot!(json!({
