@@ -8,9 +8,9 @@ use ruma::{
         direct::DirectEventContent,
         ignored_user_list::IgnoredUserListEventContent,
         room::{join_rules::JoinRule, member::MembershipState},
-        AnyGlobalAccountDataEventContent, AnyRoomAccountDataEvent,
-        AnyRoomAccountDataEventContent, GlobalAccountDataEventType,
-        RoomAccountDataEventType,
+        tag::TagEventContent,
+        AnyGlobalAccountDataEventContent, AnyRoomAccountDataEventContent,
+        GlobalAccountDataEventType, RoomAccountDataEventType,
     },
     serde::Raw,
     Int, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomId,
@@ -123,6 +123,18 @@ pub(crate) enum RoomPlanError<S: StateAccessor> {
     AclBanned,
 }
 
+/// Fatal errors migrating `m.tags` room account data event.
+#[derive(Error, Debug, Serialize)]
+pub(crate) enum RoomTagsPlanError<S: StateAccessor> {
+    #[error("failed to get tags for {_0} user")]
+    GetEvent(
+        UserKind,
+        #[source]
+        #[serde(skip)]
+        S::Error,
+    ),
+}
+
 /// Fatal errors migrating `m.direct` global account data event.
 #[derive(Error, Debug, Serialize)]
 pub(crate) enum DirectAccountDataPlanError<S: StateAccessor> {
@@ -156,6 +168,17 @@ pub(crate) enum PlanError<S: StateAccessor> {
     #[error("cannot migrate room {_0}")]
     #[serde(bound(serialize = "RoomPlanError<S>: Serialize"))]
     RoomFailed(OwnedRoomId, #[source] RoomPlanError<S>),
+
+    #[error("cannot migrate tags in room {_0}")]
+    #[serde(bound(serialize = "RoomTagsPlanError<S>: Serialize"))]
+    RoomTagsFailed(OwnedRoomId, #[source] RoomTagsPlanError<S>),
+
+    #[error("cannot migrate {} tag in room {}. Both the old and new users have a tag with this key, but they have different values. Old value is {}. New value is {}.", error.key, room_id, error.old_value, error.new_value)]
+    #[serde(bound(serialize = "RoomTagsPlanError<S>: Serialize"))]
+    RoomTagMerge {
+        room_id: OwnedRoomId,
+        error: JsonMergeError,
+    },
 
     #[error("cannot migrate direct message mapping")]
     #[serde(bound(serialize = "DirectAccountDataPlanError<S>: Serialize"))]
@@ -323,12 +346,16 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
             }
         }
 
+        let mut account_data = BTreeMap::new();
+
+        self.plan_room_account_data_tags(room_id, &mut account_data).await;
+
         let room_plan = RoomPlan {
             alias,
             invite: need_invite,
             join: need_join,
             power_level: set_power_level,
-            account_data: BTreeMap::new(),
+            account_data,
         };
 
         Ok(if !room_plan.is_empty() {
@@ -336,6 +363,71 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
         } else {
             None
         })
+    }
+
+    async fn plan_room_account_data_tags(
+        &mut self,
+        room_id: &RoomId,
+        account_data: &mut BTreeMap<
+            RoomAccountDataEventType,
+            Raw<AnyRoomAccountDataEventContent>,
+        >,
+    ) {
+        match self.plan_room_account_data_tags_inner(room_id).await {
+            Ok(Some(content)) => {
+                account_data
+                    .insert(RoomAccountDataEventType::Tag, content.cast());
+            }
+            Ok(None) => (),
+            Err(error) => {
+                self.errors
+                    .push(PlanError::RoomTagsFailed(room_id.to_owned(), error));
+            }
+        }
+    }
+
+    async fn plan_room_account_data_tags_inner(
+        &mut self,
+        room_id: &RoomId,
+    ) -> Result<Option<Raw<TagEventContent>>, RoomTagsPlanError<S>> {
+        use RoomTagsPlanError as Error;
+
+        let old = self
+            .old
+            .get_room_account_data_event::<JsonMap>(
+                room_id,
+                RoomAccountDataEventType::Tag,
+            )
+            .await
+            .map_err(|e| Error::GetEvent(UserKind::Old, e))?;
+        let Some(old) = old else {
+            return Ok(None);
+        };
+
+        let new = self
+            .new
+            .get_room_account_data_event::<JsonMap>(
+                room_id,
+                RoomAccountDataEventType::Tag,
+            )
+            .await
+            .map_err(|e| Error::GetEvent(UserKind::New, e))?
+            .unwrap_or_default();
+
+        let (merged, errors) = merge_json(old, new);
+
+        let errors = errors.into_iter().map(|error| PlanError::RoomTagMerge {
+            room_id: room_id.to_owned(),
+            error,
+        });
+        self.errors.extend(errors);
+        let merged = merged.map(|merged| {
+            Raw::new(&merged)
+                .expect("serialization should always succeed")
+                .cast()
+        });
+
+        Ok(merged)
     }
 
     async fn plan_account_data_direct(&mut self) {

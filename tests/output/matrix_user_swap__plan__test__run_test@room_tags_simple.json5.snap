@@ -7,6 +7,16 @@ input_file: tests/input/room_tags_simple.json5
   "errors": [],
   "plan": {
     "new_user_id": "@new:example.com",
-    "rooms": {}
+    "rooms": {
+      "!room1:example.com": {
+        "account_data": {
+          "m.tag": {
+            "m.favourite": {
+              "order": 1
+            }
+          }
+        }
+      }
+    }
   }
 }
