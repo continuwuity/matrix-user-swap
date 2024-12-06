@@ -1,0 +1,20 @@
+---
+source: src/plan.rs
+expression: "json!({ \"errors\": errors, \"plan\": plan, })"
+input_file: tests/input/alias.json5
+---
+{
+  "errors": [],
+  "plan": {
+    "new_user_id": "@new:example.com",
+    "rooms": {
+      "!room-alias:example.com": {
+        "alias": "#alias:example.com",
+        "join": true
+      },
+      "!room-only-alt-alias:example.com": {
+        "join": true
+      }
+    }
+  }
+}

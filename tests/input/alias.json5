@@ -1,0 +1,61 @@
+// Simple public join, where the joined room has a canonical alias. We should
+// include the alias in the plan.
+{
+    "rooms": {
+        "!room-alias:example.com": [
+            {
+                "type": "m.room.member",
+                "state_key": "@old:example.com",
+                "content": {
+                    "membership": "join"
+                }
+            },
+            {
+                "type": "m.room.join_rules",
+                "state_key": "",
+                "content": {
+                    "join_rule": "public"
+                }
+            },
+            {
+                "type": "m.room.canonical_alias",
+                "state_key": "",
+                "content": {
+                    "alias": "#alias:example.com"
+                }
+            }
+        ],
+
+        // A room with alt aliases but no canonical alias. We only display the
+        // canonical alias, so should treat this as if it has no alias.
+        "!room-only-alt-alias:example.com": [
+            {
+                "type": "m.room.member",
+                "state_key": "@old:example.com",
+                "content": {
+                    "membership": "join"
+                }
+            },
+            {
+                "type": "m.room.join_rules",
+                "state_key": "",
+                "content": {
+                    "join_rule": "public"
+                }
+            },
+            {
+                "type": "m.room.canonical_alias",
+                "state_key": "",
+                "content": {
+                    "alt_aliases": [ "#alt-alias:example.com" ]
+                }
+            }
+        ]
+    },
+    "old_user": {
+        "user_id": "@old:example.com"
+    },
+    "new_user": {
+        "user_id": "@new:example.com"
+    }
+}
