@@ -366,54 +366,11 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
 
         let need_join = !self.new_joined_rooms.contains(room_id);
 
-        let need_invite = if !need_join {
-            false
-        } else {
-            let membership = self
-                .old
-                .get_membership(room_id, &self.new_user_id)
-                .await
-                .map_err(Error::GetMembership)?
-                .unwrap_or(MembershipState::Leave);
+        if need_join {
+            plan.invite = self.plan_join(room_id, &power_levels).await?;
+            plan.join = true;
+        }
 
-            if membership == MembershipState::Ban {
-                return Err(Error::Banned);
-            }
-
-            let server_acl = self
-                .old
-                .get_server_acl(room_id)
-                .await
-                .map_err(Error::GetServerAcl)?;
-
-            if let Some(server_acl) = server_acl {
-                if !server_acl.is_allowed(self.new_user_id.server_name()) {
-                    return Err(Error::AclBanned);
-                }
-            }
-
-            let invited = membership == MembershipState::Invite;
-
-            let join_rule = self
-                .old
-                .get_join_rule(room_id)
-                .await
-                .map_err(Error::GetJoinRule)?;
-            // TODO: handle 'allow' field of 'm.room.join_rules', which could
-            // allow us to skip invites.
-            !invited && !matches!(join_rule, Some(JoinRule::Public))
-        };
-
-        if need_invite {
-            let can_invite = power_levels.user_can_invite(&self.old_user_id);
-
-            if !can_invite {
-                return Err(Error::CannotInvite);
-            }
-        };
-
-        plan.join = need_join;
-        plan.invite = need_invite;
         plan.power_level = set_power_level;
 
         let mut account_data = RoomAccountData::new();
@@ -455,6 +412,60 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
         } else {
             None
         }
+    }
+
+    /// If joining a room is possible, returns whether an invite is needed.
+    ///
+    /// If joining is not possible, returns an error.
+    async fn plan_join(
+        &mut self,
+        room_id: &RoomId,
+        power_levels: &RoomPowerLevels,
+    ) -> Result<bool, RoomPlanError<S>> {
+        use RoomPlanError as Error;
+
+        let membership = self
+            .old
+            .get_membership(room_id, &self.new_user_id)
+            .await
+            .map_err(Error::GetMembership)?
+            .unwrap_or(MembershipState::Leave);
+
+        if membership == MembershipState::Ban {
+            return Err(Error::Banned);
+        }
+
+        let server_acl = self
+            .old
+            .get_server_acl(room_id)
+            .await
+            .map_err(Error::GetServerAcl)?;
+
+        if let Some(server_acl) = server_acl {
+            if !server_acl.is_allowed(self.new_user_id.server_name()) {
+                return Err(Error::AclBanned);
+            }
+        }
+
+        let invited = membership == MembershipState::Invite;
+
+        let join_rule = self
+            .old
+            .get_join_rule(room_id)
+            .await
+            .map_err(Error::GetJoinRule)?;
+        // TODO: handle 'allow' field of 'm.room.join_rules', which could
+        // allow us to skip invites.
+        let need_invite =
+            !invited && !matches!(join_rule, Some(JoinRule::Public));
+
+        let can_invite = power_levels.user_can_invite(&self.old_user_id);
+
+        if need_invite && !can_invite {
+            return Err(Error::CannotInvite);
+        };
+
+        Ok(need_invite)
     }
 
     async fn plan_room_account_data_tags(
