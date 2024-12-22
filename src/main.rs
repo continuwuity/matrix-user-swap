@@ -44,6 +44,15 @@ struct Cli {
     new_access_token: String,
     #[clap(long)]
     new_hs_url: String,
+
+    /// Leave rooms that are fully migrated with the old user
+    ///
+    /// The recommended way to use this option is to run the tool without
+    /// `--leave` first, confirm that the end state is what you expect for the
+    /// new user, and then run it a second time with `--leave` if you're sure
+    /// that everything is correct.
+    #[clap(long)]
+    leave: bool,
 }
 
 pub(crate) type Client = client::Client<client::http_client::Reqwest>;
@@ -90,7 +99,9 @@ async fn try_main() -> Result<(), Error> {
     init_logging()?;
     let cli = Cli::parse();
 
-    let settings = PlanSettings::default();
+    let settings = PlanSettings {
+        leave: cli.leave,
+    };
 
     let http_client = client::http_client::Reqwest::new();
 

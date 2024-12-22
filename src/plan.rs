@@ -36,7 +36,7 @@ fn is_default<T: Default + Eq>(value: &T) -> bool {
 #[derive(Default, Deserialize)]
 pub(crate) struct PlanSettings {
     /// Leave rooms that are fully migrated with the old user.
-    leave: bool,
+    pub(crate) leave: bool,
 }
 
 pub(crate) type RoomAccountData =
