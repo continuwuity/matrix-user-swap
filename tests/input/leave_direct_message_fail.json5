@@ -1,0 +1,31 @@
+// The "leave" setting is enabled, but we have an error migrating the global
+// 'm.direct' account data event. Because leaving rooms may change 'm.direct'
+// on the old user, we don't want to leave any rooms.
+{
+    "settings": {
+        "leave": true
+    },
+    "rooms": {
+        "!room:example.com": [
+            {
+                "type": "m.room.member",
+                "state_key": "@old:example.com",
+                "content": {
+                    "membership": "join"
+                }
+            }
+        ]
+    },
+    "old_user": {
+        "user_id": "@old:example.com",
+
+        "global_account_data": {
+            "m.direct": {
+                "@user-a:example.com": "a string",
+            }
+        }
+    },
+    "new_user": {
+        "user_id": "@new:example.com"
+    }
+}

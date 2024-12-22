@@ -1,0 +1,62 @@
+// The "leave" setting is enabled, but not all rooms are fully migrated. Fully
+// migrated rooms should be left, but rooms with errors should not.
+{
+    "settings": {
+        "leave": true
+    },
+    "rooms": {
+        // This one has no errors and should be left
+        "!fully-migrated:example.com": [
+            {
+                "type": "m.room.member",
+                "state_key": "@old:example.com",
+                "content": {
+                    "membership": "join"
+                }
+            }
+        ],
+
+        // We can't join this one, don't leave it
+        "!banned:example.com": [
+            {
+                "type": "m.room.member",
+                "state_key": "@old:example.com",
+                "content": {
+                    "membership": "join"
+                }
+            },
+            {
+                "type": "m.room.member",
+                "state_key": "@new:example.com",
+                "content": {
+                    "membership": "ban"
+                }
+            }
+        ],
+
+        // This one has a broken alias event, but that isn't consequential for
+        // migrating, so we should leave it anyway
+        "!broken-alias:example.com": [
+            {
+                "type": "m.room.member",
+                "state_key": "@old:example.com",
+                "content": {
+                    "membership": "join"
+                }
+            },
+            {
+                "type": "m.room.canonical_alias",
+                "state_key": "",
+                "content": {
+                    "alias": 42
+                }
+            }
+        ],
+    },
+    "old_user": {
+        "user_id": "@old:example.com"
+    },
+    "new_user": {
+        "user_id": "@new:example.com"
+    }
+}
