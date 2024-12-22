@@ -108,12 +108,20 @@ fn print_column(label: &str, enabled: bool) {
 
 fn print_plan(plan: &Plan<ClientStateAccessor>) {
     println!("Attempting to migrate the following rooms:");
+
+    let max_room_len = 48;
+
     for (room_id, room) in &plan.rooms {
-        let identity = RoomIdentity {
-            id: room_id.clone(),
-            alias: room.alias.clone(),
-        };
-        println!("Room {identity}:");
+        let name = room
+            .alias
+            .as_ref()
+            .map(|alias| alias.as_str())
+            .unwrap_or(room_id.as_str());
+        if name.len() <= max_room_len {
+            print!("{name:<max_room_len$}");
+        } else {
+            print!("{name}\n{:<max_room_len$}", "");
+        }
 
         print_column("errors", !room.errors.is_empty());
         print_column("invite", room.invite);
