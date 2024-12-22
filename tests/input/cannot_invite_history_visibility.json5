@@ -31,6 +31,39 @@
                     "history_visibility": "joined"
                 }
             }
+        ],
+
+        // An invalid power levels event prevents even determining whether an
+        // invite is allowed.
+        "!invalid-power-levels:example.com": [
+            {
+                "type": "m.room.member",
+                "state_key": "@old:example.com",
+                "content": {
+                    "membership": "join"
+                }
+            },
+            {
+                "type": "m.room.join_rules",
+                "state_key": "",
+                "content": {
+                    "join_rule": "invite"
+                }
+            },
+            {
+                "type": "m.room.power_levels",
+                "state_key": "",
+                "content": {
+                    "invite": "some_random_string"
+                }
+            },
+            {
+                "type": "m.room.history_visibility",
+                "state_key": "",
+                "content": {
+                    "history_visibility": "joined"
+                }
+            }
         ]
     },
     "old_user": {

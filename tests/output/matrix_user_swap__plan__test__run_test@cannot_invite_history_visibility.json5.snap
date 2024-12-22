@@ -6,6 +6,11 @@ input_file: tests/input/cannot_invite_history_visibility.json5
 {
   "new_user_id": "@new:example.com",
   "rooms": {
+    "!invalid-power-levels:example.com": {
+      "errors": [
+        "GetPowerLevels"
+      ]
+    },
     "!simple-room:example.com": {
       "errors": [
         "CannotInvite",

@@ -1,11 +1,16 @@
 ---
 source: src/plan.rs
-expression: plan
+expression: plan_json
 input_file: tests/input/cannot_invite.json5
 ---
 {
   "new_user_id": "@new:example.com",
   "rooms": {
+    "!invalid-power-levels:example.com": {
+      "errors": [
+        "GetPowerLevels"
+      ]
+    },
     "!power-levels-room:example.com": {
       "errors": [
         "CannotInvite"
