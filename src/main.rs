@@ -5,6 +5,7 @@ use derive_more::Display;
 use ruma::{
     api,
     client::{self, HttpClient},
+    events::RoomAccountDataEventType,
 };
 use serde::Serialize;
 use thiserror::Error;
@@ -18,7 +19,7 @@ mod state;
 mod utils;
 
 use crate::{
-    plan::{make_plan, FatalPlanError, PlanSettings},
+    plan::{make_plan, FatalPlanError, Plan, PlanSettings},
     state::{ClientStateAccessor, ClientStateError},
     utils::RoomIdentity,
 };
@@ -95,6 +96,83 @@ fn init_logging() -> Result<(), InitLoggingError> {
     Ok(())
 }
 
+fn print_column(label: &str, enabled: bool) {
+    if enabled {
+        print!("  {label}");
+    } else {
+        for _ in 0..label.len() + 2 {
+            print!(" ");
+        }
+    }
+}
+
+fn print_plan(plan: &Plan<ClientStateAccessor>) {
+    println!("Attempting to migrate the following rooms:");
+    for (room_id, room) in &plan.rooms {
+        let identity = RoomIdentity {
+            id: room_id.clone(),
+            alias: room.alias.clone(),
+        };
+        println!("Room {identity}:");
+
+        print_column("errors", !room.errors.is_empty());
+        print_column("invite", room.invite);
+        print_column("join", room.join);
+        print_column("leave", room.leave);
+        print_column("power_level", room.power_level.is_some());
+
+        let mut tags = false;
+        for kind in room.account_data.keys() {
+            // When we add support for planning a new type, we need to add it
+            // here.
+            match kind {
+                RoomAccountDataEventType::Tag => tags = true,
+                _ => t::error!(
+                    "unrecognized room account data event type {kind}"
+                ),
+            }
+        }
+        print_column("tags", tags);
+        println!();
+    }
+
+    if !plan.global_account_data.is_empty() {
+        println!();
+        println!("Migrating the following global account data events:");
+
+        for kind in plan.global_account_data.keys() {
+            println!("  - {kind}");
+        }
+    }
+
+    let any_errors = !plan.errors.is_empty()
+        || plan.rooms.values().any(|room| !room.errors.is_empty());
+    if any_errors {
+        println!();
+        println!("Encountered the following errors:");
+
+        for error in &plan.errors {
+            println!("\n  {}", error.display_with_sources("\n    "));
+        }
+
+        for (room_id, room) in &plan.rooms {
+            if room.errors.is_empty() {
+                continue;
+            }
+
+            let identity = RoomIdentity {
+                id: room_id.clone(),
+                alias: room.alias.clone(),
+            };
+            println!("\n  In room {identity}:");
+
+            for error in &room.errors {
+                println!("    {}", error.display_with_sources("\n      "));
+            }
+        }
+    }
+}
+
 async fn try_main() -> Result<(), Error> {
     init_logging()?;
     let cli = Cli::parse();
@@ -127,24 +205,7 @@ async fn try_main() -> Result<(), Error> {
 
     let plan = make_plan(settings, &old, &new).await?;
 
-    for error in &plan.errors {
-        t::error!("{}", error.display_with_sources("\n  Caused by: "));
-    }
-
-    for (room_id, room_plan) in &plan.rooms {
-        let room = RoomIdentity {
-            id: room_id.clone(),
-            alias: room_plan.alias.clone(),
-        };
-        if !room_plan.errors.is_empty() {
-            t::error!("Errors migrating room {room}:");
-            for error in &room_plan.errors {
-                t::error!("{}", error.display_with_sources("\n  Caused by: "));
-            }
-        }
-    }
-
-    println!("{plan}");
+    print_plan(&plan);
 
     Ok(())
 }

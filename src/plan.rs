@@ -1,7 +1,6 @@
 use std::{
     borrow::Cow,
     collections::{BTreeMap, HashSet},
-    fmt,
 };
 
 use ruma::{
@@ -827,42 +826,6 @@ pub(crate) async fn make_plan<S: StateAccessor>(
     state.plan().await;
 
     Ok(state.plan)
-}
-
-impl<S: StateAccessor> fmt::Display for Plan<S> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(f, "New userid: {}", self.new_user_id)?;
-
-        writeln!(f, "Rooms:")?;
-        for (id, room) in &self.rooms {
-            write!(f, "  - {id} (")?;
-            if room.invite {
-                write!(f, "invite,")?;
-            }
-            if room.join {
-                write!(f, "join")?;
-            }
-            if room.leave {
-                write!(f, "leave")?;
-            }
-            write!(f, ")")?;
-            if let Some(alias) = &room.alias {
-                write!(f, " [{alias}]")?;
-            }
-            if let Some(power_level) = room.power_level {
-                write!(f, " (power={power_level})")?;
-            }
-            writeln!(f)?;
-        }
-
-        writeln!(f, "Global account data:")?;
-        for (kind, content) in &self.global_account_data {
-            let content_str = serde_json::to_string_pretty(content)
-                .expect("Raw<T> serialization should always succeed");
-            writeln!(f, "{kind}: {}", content_str)?;
-        }
-        Ok(())
-    }
 }
 
 #[cfg(test)]
