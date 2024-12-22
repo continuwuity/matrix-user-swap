@@ -123,6 +123,12 @@ pub(crate) enum JoinPlanError<S: StateAccessor> {
     ),
 
     #[error(
+        "room is invite-only, but failed to get current power levels so \
+         cannot determine whether old user has permission to invite new user"
+    )]
+    MissingPowerLevels,
+
+    #[error(
         "room is invite-only, but old user does not have permission to invite \
          new user"
     )]
@@ -149,7 +155,10 @@ pub(crate) enum RoomPlanError<S: StateAccessor> {
         S::Error,
     ),
 
-    #[error("failed to get power levels")]
+    #[error(
+        "failed to get power levels. Cannot determine whether power level \
+         migration is necessary."
+    )]
     GetPowerLevels(
         #[source]
         #[serde(skip)]
@@ -366,16 +375,24 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
             .old
             .get_power_levels(room_id)
             .await
-            .map_err(Error::GetPowerLevels)?;
+            .map_err(Error::GetPowerLevels);
+        let power_levels = match power_levels {
+            Ok(power_levels) => Some(power_levels),
+            Err(error) => {
+                plan.errors.push(error);
+                None
+            }
+        };
 
-        let set_power_level =
-            self.plan_power_level(&power_levels, &mut plan.errors);
+        let set_power_level = power_levels.as_ref().and_then(|power_levels| {
+            self.plan_power_level(power_levels, &mut plan.errors)
+        });
 
         let mut joined = self.new_joined_rooms.contains(room_id);
         let need_join = !joined;
 
         if need_join {
-            match self.plan_join(room_id, &power_levels).await {
+            match self.plan_join(room_id, power_levels.as_ref()).await {
                 Ok(invite) => {
                     plan.join = true;
                     plan.invite = invite;
@@ -438,7 +455,7 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
     async fn plan_join(
         &mut self,
         room_id: &RoomId,
-        power_levels: &RoomPowerLevels,
+        power_levels: Option<&RoomPowerLevels>,
     ) -> Result<bool, JoinPlanError<S>> {
         use JoinPlanError as Error;
 
@@ -477,11 +494,13 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
         let need_invite =
             !invited && !matches!(join_rule, Some(JoinRule::Public));
 
-        let can_invite = power_levels.user_can_invite(&self.old_user_id);
-
-        if need_invite && !can_invite {
-            return Err(Error::CannotInvite);
-        };
+        if need_invite {
+            let power_levels = power_levels.ok_or(Error::MissingPowerLevels)?;
+            let can_invite = power_levels.user_can_invite(&self.old_user_id);
+            if !can_invite {
+                return Err(Error::CannotInvite);
+            }
+        }
 
         Ok(need_invite)
     }

@@ -9,7 +9,8 @@ input_file: tests/input/cannot_invite_public_room.json5
     "!invalid-power-levels:example.com": {
       "errors": [
         "GetPowerLevels"
-      ]
+      ],
+      "join": true
     },
     "!room1:example.com": {
       "join": true

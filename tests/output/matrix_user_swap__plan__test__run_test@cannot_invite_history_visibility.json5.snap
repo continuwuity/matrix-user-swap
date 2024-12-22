@@ -8,7 +8,16 @@ input_file: tests/input/cannot_invite_history_visibility.json5
   "rooms": {
     "!invalid-power-levels:example.com": {
       "errors": [
-        "GetPowerLevels"
+        "GetPowerLevels",
+        {
+          "Join": "MissingPowerLevels"
+        },
+        {
+          "RestrictedHistoryVisibility": {
+            "already_joined": false,
+            "visibility": "joined"
+          }
+        }
       ]
     },
     "!simple-room:example.com": {

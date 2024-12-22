@@ -8,7 +8,10 @@ input_file: tests/input/cannot_invite.json5
   "rooms": {
     "!invalid-power-levels:example.com": {
       "errors": [
-        "GetPowerLevels"
+        "GetPowerLevels",
+        {
+          "Join": "MissingPowerLevels"
+        }
       ]
     },
     "!power-levels-room:example.com": {

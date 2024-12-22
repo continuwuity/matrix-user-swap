@@ -8,7 +8,10 @@ input_file: tests/input/room_tags_error_unmigrated_room.json5
   "rooms": {
     "!invalid-power-levels:example.com": {
       "errors": [
-        "GetPowerLevels"
+        "GetPowerLevels",
+        {
+          "Join": "MissingPowerLevels"
+        }
       ]
     },
     "!room1:example.com": {
