@@ -348,32 +348,13 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
     }
 
     async fn plan_room(&mut self, room_id: OwnedRoomId) {
-        let mut plan = RoomPlan::default();
-
-        if let Err(error) = self.plan_room_inner(&room_id, &mut plan).await {
-            plan.errors.push(error);
-        }
-
-        if !plan.is_empty() {
-            match self.old.get_room_alias(&room_id).await {
-                Ok(alias) => plan.alias = alias,
-                Err(error) => plan.errors.push(RoomPlanError::GetAlias(error)),
-            }
-
-            self.plan.rooms.insert(room_id, plan);
-        }
-    }
-
-    async fn plan_room_inner(
-        &mut self,
-        room_id: &RoomId,
-        plan: &mut RoomPlan<S>,
-    ) -> Result<(), RoomPlanError<S>> {
         use RoomPlanError as Error;
+
+        let mut plan = RoomPlan::default();
 
         let power_levels = self
             .old
-            .get_power_levels(room_id)
+            .get_power_levels(&room_id)
             .await
             .map_err(Error::GetPowerLevels);
         let power_levels = match power_levels {
@@ -388,11 +369,11 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
             self.plan_power_level(power_levels, &mut plan.errors)
         });
 
-        let mut joined = self.new_joined_rooms.contains(room_id);
+        let mut joined = self.new_joined_rooms.contains(&room_id);
         let need_join = !joined;
 
         if need_join {
-            match self.plan_join(room_id, power_levels.as_ref()).await {
+            match self.plan_join(&room_id, power_levels.as_ref()).await {
                 Ok(invite) => {
                     plan.join = true;
                     plan.invite = invite;
@@ -406,13 +387,13 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
 
         let mut account_data = RoomAccountData::new();
         self.plan_room_account_data_tags(
-            room_id,
+            &room_id,
             &mut account_data,
             &mut plan.errors,
         )
         .await;
 
-        self.check_history_visibility(room_id, need_join, &mut plan.errors)
+        self.check_history_visibility(&room_id, need_join, &mut plan.errors)
             .await;
 
         if joined {
@@ -420,7 +401,14 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
             plan.account_data = account_data;
         }
 
-        Ok(())
+        if !plan.is_empty() {
+            match self.old.get_room_alias(&room_id).await {
+                Ok(alias) => plan.alias = alias,
+                Err(error) => plan.errors.push(RoomPlanError::GetAlias(error)),
+            }
+
+            self.plan.rooms.insert(room_id, plan);
+        }
     }
 
     /// If the old user's power level needs to (and can) be propagated to the
