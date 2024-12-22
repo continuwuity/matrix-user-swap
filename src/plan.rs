@@ -10,7 +10,7 @@ use ruma::{
         ignored_user_list::IgnoredUserListEventContent,
         room::{
             history_visibility::HistoryVisibility, join_rules::JoinRule,
-            member::MembershipState,
+            member::MembershipState, power_levels::RoomPowerLevels,
         },
         tag::TagEventContent,
         AnyGlobalAccountDataEventContent, AnyRoomAccountDataEventContent,
@@ -361,23 +361,8 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
             .await
             .map_err(Error::GetPowerLevels)?;
 
-        let old_power_level = power_levels.for_user(&self.old_user_id);
-        let new_power_level = power_levels.for_user(&self.new_user_id);
-        let set_power_level = if new_power_level < old_power_level {
-            if power_levels.user_can_change_user_power_level(
-                &self.old_user_id,
-                &self.new_user_id,
-            ) {
-                Some(old_power_level)
-            } else {
-                plan.errors.push(RoomPlanError::CopyPowerLevel {
-                    old_power_level,
-                });
-                None
-            }
-        } else {
-            None
-        };
+        let set_power_level =
+            self.plan_power_level(&power_levels, &mut plan.errors);
 
         let need_join = !self.new_joined_rooms.contains(room_id);
 
@@ -444,6 +429,32 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
             .await;
 
         Ok(())
+    }
+
+    /// If the old user's power level needs to (and can) be propagated to the
+    /// new user in a given room, returns the power level to set.
+    fn plan_power_level(
+        &self,
+        power_levels: &RoomPowerLevels,
+        errors: &mut Vec<RoomPlanError<S>>,
+    ) -> Option<Int> {
+        let old_power_level = power_levels.for_user(&self.old_user_id);
+        let new_power_level = power_levels.for_user(&self.new_user_id);
+        if new_power_level < old_power_level {
+            if power_levels.user_can_change_user_power_level(
+                &self.old_user_id,
+                &self.new_user_id,
+            ) {
+                Some(old_power_level)
+            } else {
+                errors.push(RoomPlanError::CopyPowerLevel {
+                    old_power_level,
+                });
+                None
+            }
+        } else {
+            None
+        }
     }
 
     async fn plan_room_account_data_tags(
