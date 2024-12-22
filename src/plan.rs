@@ -83,6 +83,7 @@ struct MakePlanState<'a, S: StateAccessor> {
     new: &'a S,
     new_user_id: OwnedUserId,
     old_user_id: OwnedUserId,
+    old_joined_rooms: Vec<OwnedRoomId>,
     new_joined_rooms: HashSet<OwnedRoomId>,
 
     plan: Plan<S>,
@@ -347,14 +348,25 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
                 .unwrap_or(false)
     }
 
-    async fn plan_room(&mut self, room_id: OwnedRoomId) {
+    async fn plan(&mut self) {
+        for room_id in &self.old_joined_rooms {
+            if let Some(room) = self.plan_room(room_id).await {
+                self.plan.rooms.insert(room_id.clone(), room);
+            }
+        }
+
+        self.plan_account_data_direct().await;
+        self.plan_account_data_ignored_users().await;
+    }
+
+    async fn plan_room(&self, room_id: &RoomId) -> Option<RoomPlan<S>> {
         use RoomPlanError as Error;
 
         let mut plan = RoomPlan::default();
 
         let power_levels = self
             .old
-            .get_power_levels(&room_id)
+            .get_power_levels(room_id)
             .await
             .map_err(Error::GetPowerLevels);
         let power_levels = match power_levels {
@@ -369,11 +381,11 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
             self.plan_power_level(power_levels, &mut plan.errors)
         });
 
-        let mut joined = self.new_joined_rooms.contains(&room_id);
+        let mut joined = self.new_joined_rooms.contains(room_id);
         let need_join = !joined;
 
         if need_join {
-            match self.plan_join(&room_id, power_levels.as_ref()).await {
+            match self.plan_join(room_id, power_levels.as_ref()).await {
                 Ok(invite) => {
                     plan.join = true;
                     plan.invite = invite;
@@ -387,13 +399,13 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
 
         let mut account_data = RoomAccountData::new();
         self.plan_room_account_data_tags(
-            &room_id,
+            room_id,
             &mut account_data,
             &mut plan.errors,
         )
         .await;
 
-        self.check_history_visibility(&room_id, need_join, &mut plan.errors)
+        self.check_history_visibility(room_id, need_join, &mut plan.errors)
             .await;
 
         if joined {
@@ -402,12 +414,14 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
         }
 
         if !plan.is_empty() {
-            match self.old.get_room_alias(&room_id).await {
+            match self.old.get_room_alias(room_id).await {
                 Ok(alias) => plan.alias = alias,
                 Err(error) => plan.errors.push(RoomPlanError::GetAlias(error)),
             }
 
-            self.plan.rooms.insert(room_id, plan);
+            Some(plan)
+        } else {
+            None
         }
     }
 
@@ -441,7 +455,7 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
     ///
     /// If joining is not possible, returns an error.
     async fn plan_join(
-        &mut self,
+        &self,
         room_id: &RoomId,
         power_levels: Option<&RoomPowerLevels>,
     ) -> Result<bool, JoinPlanError<S>> {
@@ -494,7 +508,7 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
     }
 
     async fn plan_room_account_data_tags(
-        &mut self,
+        &self,
         room_id: &RoomId,
         account_data: &mut RoomAccountData,
         errors: &mut Vec<RoomPlanError<S>>,
@@ -512,7 +526,7 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
     }
 
     async fn plan_room_account_data_tags_inner(
-        &mut self,
+        &self,
         room_id: &RoomId,
         errors: &mut Vec<RoomPlanError<S>>,
     ) -> Result<Option<Raw<TagEventContent>>, RoomTagsPlanError<S>> {
@@ -555,7 +569,7 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
     }
 
     async fn check_history_visibility(
-        &mut self,
+        &self,
         room_id: &RoomId,
         need_join: bool,
         errors: &mut Vec<RoomPlanError<S>>,
@@ -768,6 +782,7 @@ pub(crate) async fn make_plan<S: StateAccessor>(
         new,
         old_user_id,
         new_user_id: new_user_id.clone(),
+        old_joined_rooms,
         new_joined_rooms,
 
         plan: Plan {
@@ -778,12 +793,7 @@ pub(crate) async fn make_plan<S: StateAccessor>(
         },
     };
 
-    for room_id in old_joined_rooms {
-        state.plan_room(room_id).await;
-    }
-
-    state.plan_account_data_direct().await;
-    state.plan_account_data_ignored_users().await;
+    state.plan().await;
 
     Ok(state.plan)
 }
