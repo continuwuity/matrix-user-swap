@@ -39,6 +39,9 @@ pub(crate) struct PlanSettings {
     leave: bool,
 }
 
+pub(crate) type RoomAccountData =
+    BTreeMap<RoomAccountDataEventType, Raw<AnyRoomAccountDataEventContent>>;
+
 #[derive(Serialize)]
 pub(crate) struct RoomPlan<S: StateAccessor> {
     // TODO: store this as RoomIdentity instead of separating the alias and id?
@@ -53,8 +56,7 @@ pub(crate) struct RoomPlan<S: StateAccessor> {
     #[serde(skip_serializing_if = "is_default")]
     pub(crate) power_level: Option<Int>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
-    pub(crate) account_data:
-        BTreeMap<RoomAccountDataEventType, Raw<AnyRoomAccountDataEventContent>>,
+    pub(crate) account_data: RoomAccountData,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     #[serde(bound(serialize = "RoomPlanError<S>: Serialize"))]
     pub(crate) errors: Vec<RoomPlanError<S>>,
@@ -429,8 +431,17 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
         plan.invite = need_invite;
         plan.power_level = set_power_level;
 
-        self.plan_room_account_data_tags(room_id, plan).await;
-        self.check_history_visibility(room_id, plan).await;
+        let mut account_data = RoomAccountData::new();
+        self.plan_room_account_data_tags(
+            room_id,
+            &mut account_data,
+            &mut plan.errors,
+        )
+        .await;
+        plan.account_data = account_data;
+
+        self.check_history_visibility(room_id, need_join, &mut plan.errors)
+            .await;
 
         Ok(())
     }
@@ -438,19 +449,17 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
     async fn plan_room_account_data_tags(
         &mut self,
         room_id: &RoomId,
-        plan: &mut RoomPlan<S>,
+        account_data: &mut RoomAccountData,
+        errors: &mut Vec<RoomPlanError<S>>,
     ) {
-        match self
-            .plan_room_account_data_tags_inner(room_id, &mut plan.errors)
-            .await
-        {
+        match self.plan_room_account_data_tags_inner(room_id, errors).await {
             Ok(Some(content)) => {
-                plan.account_data
+                account_data
                     .insert(RoomAccountDataEventType::Tag, content.cast());
             }
             Ok(None) => (),
             Err(error) => {
-                plan.errors.push(RoomPlanError::RoomTagsFailed(error));
+                errors.push(RoomPlanError::RoomTagsFailed(error));
             }
         }
     }
@@ -501,18 +510,20 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
     async fn check_history_visibility(
         &mut self,
         room_id: &RoomId,
-        plan: &mut RoomPlan<S>,
+        need_join: bool,
+        errors: &mut Vec<RoomPlanError<S>>,
     ) {
-        let result = self.check_history_visibility_inner(room_id, plan).await;
+        let result =
+            self.check_history_visibility_inner(room_id, need_join).await;
         if let Err(e) = result {
-            plan.errors.push(e);
+            errors.push(e);
         }
     }
 
     async fn check_history_visibility_inner(
         &self,
         room_id: &RoomId,
-        plan: &mut RoomPlan<S>,
+        need_join: bool,
     ) -> Result<(), RoomPlanError<S>> {
         use RoomPlanError as Error;
 
@@ -527,7 +538,7 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
             | None => Ok(()),
             Some(visibility) => Err(Error::RestrictedHistoryVisibility {
                 visibility,
-                already_joined: !plan.join,
+                already_joined: !need_join,
             }),
         }
     }
