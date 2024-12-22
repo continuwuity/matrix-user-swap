@@ -357,6 +357,8 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
 
         self.plan_account_data_direct().await;
         self.plan_account_data_ignored_users().await;
+
+        self.plan_leaves().await;
     }
 
     async fn plan_room(&self, room_id: &RoomId) -> Option<RoomPlan<S>> {
@@ -738,6 +740,28 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
         });
 
         Ok(merged)
+    }
+
+    /// Determine which rooms should be left and mark them.
+    ///
+    /// Rooms will only be left if [`Settings::leave`] is set, and if they are
+    /// fully migrated with no errors.
+    async fn plan_leaves(&mut self) {
+        if !self.settings.leave {
+            return;
+        }
+
+        // Top level errors might mean that any room is incomplete
+        if !self.plan.errors.is_empty() {
+            return;
+        }
+
+        for room_id in &self.old_joined_rooms {
+            let plan = self.plan.rooms.entry(room_id.clone()).or_default();
+            if plan.errors.is_empty() {
+                plan.leave = true;
+            }
+        }
     }
 }
 

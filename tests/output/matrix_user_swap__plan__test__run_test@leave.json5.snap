@@ -1,6 +1,6 @@
 ---
 source: src/plan.rs
-expression: plan
+expression: plan_json
 input_file: tests/input/leave.json5
 ---
 {
@@ -8,7 +8,11 @@ input_file: tests/input/leave.json5
   "rooms": {
     "!join:example.com": {
       "invite": true,
-      "join": true
+      "join": true,
+      "leave": true
+    },
+    "!room1:example.com": {
+      "leave": true
     }
   }
 }
