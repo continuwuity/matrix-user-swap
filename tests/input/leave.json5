@@ -33,6 +33,32 @@
                     "membership": "join"
                 }
             }
+        ],
+
+        // Same as the last case, but we have an alias that we should record
+        // even though we didn't plan anything other than leaving.
+        "!no-op-with-alias:example.com": [
+            {
+                "type": "m.room.member",
+                "state_key": "@old:example.com",
+                "content": {
+                    "membership": "join"
+                }
+            },
+            {
+                "type": "m.room.member",
+                "state_key": "@new:example.com",
+                "content": {
+                    "membership": "join"
+                }
+            },
+            {
+                "type": "m.room.canonical_alias",
+                "state_key": "",
+                "content": {
+                    "alias": "#alias:example.com"
+                }
+            }
         ]
     },
     "old_user": {
