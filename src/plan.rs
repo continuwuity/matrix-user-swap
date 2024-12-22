@@ -364,14 +364,21 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
         let set_power_level =
             self.plan_power_level(&power_levels, &mut plan.errors);
 
-        let need_join = !self.new_joined_rooms.contains(room_id);
+        let mut joined = self.new_joined_rooms.contains(room_id);
+        let need_join = !joined;
 
         if need_join {
-            plan.invite = self.plan_join(room_id, &power_levels).await?;
-            plan.join = true;
+            match self.plan_join(room_id, &power_levels).await {
+                Ok(invite) => {
+                    plan.join = true;
+                    plan.invite = invite;
+                    joined = true;
+                }
+                Err(error) => {
+                    plan.errors.push(error);
+                }
+            }
         }
-
-        plan.power_level = set_power_level;
 
         let mut account_data = RoomAccountData::new();
         self.plan_room_account_data_tags(
@@ -380,10 +387,14 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
             &mut plan.errors,
         )
         .await;
-        plan.account_data = account_data;
 
         self.check_history_visibility(room_id, need_join, &mut plan.errors)
             .await;
+
+        if joined {
+            plan.power_level = set_power_level;
+            plan.account_data = account_data;
+        }
 
         Ok(())
     }

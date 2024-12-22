@@ -8,7 +8,18 @@ input_file: tests/input/room_tags_error_unmigrated_room.json5
   "rooms": {
     "!room1:example.com": {
       "errors": [
-        "CannotInvite"
+        "CannotInvite",
+        {
+          "RoomTagMerge": {
+            "key": "m.tag1",
+            "new_value": {
+              "key": "new_value"
+            },
+            "old_value": {
+              "key": "old_value"
+            }
+          }
+        }
       ]
     }
   }
