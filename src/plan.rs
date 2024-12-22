@@ -359,6 +359,8 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
         self.plan_account_data_ignored_users().await;
 
         self.plan_leaves().await;
+
+        self.get_aliases().await;
     }
 
     async fn plan_room(&self, room_id: &RoomId) -> Option<RoomPlan<S>> {
@@ -416,11 +418,6 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
         }
 
         if !plan.is_empty() {
-            match self.old.get_room_alias(room_id).await {
-                Ok(alias) => plan.alias = alias,
-                Err(error) => plan.errors.push(RoomPlanError::GetAlias(error)),
-            }
-
             Some(plan)
         } else {
             None
@@ -760,6 +757,17 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
             let plan = self.plan.rooms.entry(room_id.clone()).or_default();
             if plan.errors.is_empty() {
                 plan.leave = true;
+            }
+        }
+    }
+
+    /// Fetch aliases for all rooms that we have planned actions or recorded
+    /// errors in.
+    async fn get_aliases(&mut self) {
+        for (room_id, plan) in &mut self.plan.rooms {
+            match self.old.get_room_alias(room_id).await {
+                Ok(alias) => plan.alias = alias,
+                Err(error) => plan.errors.push(RoomPlanError::GetAlias(error)),
             }
         }
     }

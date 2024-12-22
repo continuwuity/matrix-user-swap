@@ -12,6 +12,7 @@ input_file: tests/input/leave.json5
       "leave": true
     },
     "!no-op-with-alias:example.com": {
+      "alias": "#alias:example.com",
       "leave": true
     },
     "!room1:example.com": {
