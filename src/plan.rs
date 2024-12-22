@@ -330,23 +330,18 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
     }
 
     async fn plan_room(&mut self, room_id: OwnedRoomId) {
-        use RoomPlanError as Error;
-
         let mut plan = RoomPlan::default();
-
-        // TODO: skip fetching the alias when we don't need it (this can happen
-        // if a room is already fully migrated and we don't need to print an
-        // error)
-        match self.old.get_room_alias(&room_id).await {
-            Ok(alias) => plan.alias = alias,
-            Err(error) => plan.errors.push(Error::GetAlias(error)),
-        }
 
         if let Err(error) = self.plan_room_inner(&room_id, &mut plan).await {
             plan.errors.push(error);
         }
 
         if !plan.is_empty() {
+            match self.old.get_room_alias(&room_id).await {
+                Ok(alias) => plan.alias = alias,
+                Err(error) => plan.errors.push(RoomPlanError::GetAlias(error)),
+            }
+
             self.plan.rooms.insert(room_id, plan);
         }
     }
