@@ -1,29 +1,20 @@
 ---
 source: src/plan.rs
-expression: "json!({ \"errors\": errors, \"plan\": plan, })"
+expression: plan
 input_file: tests/input/cannot_invite_or_copy_power_levels.json5
 ---
 {
-  "errors": [
-    {
-      "CannotCopyPowerLevel": {
-        "old_power_level": 50,
-        "room": {
-          "id": "!room:example.com"
-        }
-      }
-    },
-    {
-      "RoomFailed": [
+  "new_user_id": "@new:example.com",
+  "rooms": {
+    "!room:example.com": {
+      "errors": [
         {
-          "id": "!room:example.com"
+          "CopyPowerLevel": {
+            "old_power_level": 50
+          }
         },
         "CannotInvite"
       ]
     }
-  ],
-  "plan": {
-    "new_user_id": "@new:example.com",
-    "rooms": {}
   }
 }

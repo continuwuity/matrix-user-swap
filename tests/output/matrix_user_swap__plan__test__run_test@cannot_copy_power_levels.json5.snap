@@ -1,45 +1,40 @@
 ---
 source: src/plan.rs
-expression: "json!({ \"errors\": errors, \"plan\": plan, })"
+expression: plan_json
 input_file: tests/input/cannot_copy_power_levels.json5
 ---
 {
-  "errors": [
-    {
-      "CannotCopyPowerLevel": {
-        "old_power_level": 50,
-        "room": {
-          "id": "!already-joined:example.com"
+  "new_user_id": "@new:example.com",
+  "rooms": {
+    "!already-joined:example.com": {
+      "errors": [
+        {
+          "CopyPowerLevel": {
+            "old_power_level": 50
+          }
         }
-      }
+      ]
     },
-    {
-      "CannotCopyPowerLevel": {
-        "old_power_level": 50,
-        "room": {
-          "id": "!invite:example.com"
+    "!invite:example.com": {
+      "errors": [
+        {
+          "CopyPowerLevel": {
+            "old_power_level": 50
+          }
         }
-      }
+      ],
+      "invite": true,
+      "join": true
     },
-    {
-      "CannotCopyPowerLevel": {
-        "old_power_level": 50,
-        "room": {
-          "id": "!public:example.com"
+    "!public:example.com": {
+      "errors": [
+        {
+          "CopyPowerLevel": {
+            "old_power_level": 50
+          }
         }
-      }
-    }
-  ],
-  "plan": {
-    "new_user_id": "@new:example.com",
-    "rooms": {
-      "!invite:example.com": {
-        "invite": true,
-        "join": true
-      },
-      "!public:example.com": {
-        "join": true
-      }
+      ],
+      "join": true
     }
   }
 }

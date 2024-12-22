@@ -1,29 +1,20 @@
 ---
 source: src/plan.rs
-expression: "json!({ \"errors\": errors, \"plan\": plan, })"
+expression: plan
 input_file: tests/input/cannot_invite.json5
 ---
 {
-  "errors": [
-    {
-      "RoomFailed": [
-        {
-          "id": "!power-levels-room:example.com"
-        },
+  "new_user_id": "@new:example.com",
+  "rooms": {
+    "!power-levels-room:example.com": {
+      "errors": [
         "CannotInvite"
       ]
     },
-    {
-      "RoomFailed": [
-        {
-          "id": "!simple-room:example.com"
-        },
+    "!simple-room:example.com": {
+      "errors": [
         "CannotInvite"
       ]
     }
-  ],
-  "plan": {
-    "new_user_id": "@new:example.com",
-    "rooms": {}
   }
 }

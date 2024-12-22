@@ -1,41 +1,34 @@
 ---
 source: src/plan.rs
-expression: "json!({ \"errors\": errors, \"plan\": plan, })"
+expression: plan_json
 input_file: tests/input/room_tags_cannot_merge.json5
 ---
 {
-  "errors": [
-    {
-      "RoomTagMerge": {
-        "error": {
-          "key": "u.tag1",
-          "new_value": {},
-          "old_value": {
+  "new_user_id": "@new:example.com",
+  "rooms": {
+    "!room1:example.com": {
+      "account_data": {
+        "m.tag": {
+          "m.favourite": {
+            "order": 1
+          },
+          "u.tag1": {},
+          "u.tag2": {
             "key": "value"
           }
-        },
-        "room": {
-          "id": "!room1:example.com"
         }
-      }
-    }
-  ],
-  "plan": {
-    "new_user_id": "@new:example.com",
-    "rooms": {
-      "!room1:example.com": {
-        "account_data": {
-          "m.tag": {
-            "m.favourite": {
-              "order": 1
-            },
-            "u.tag1": {},
-            "u.tag2": {
+      },
+      "errors": [
+        {
+          "RoomTagMerge": {
+            "key": "u.tag1",
+            "new_value": {},
+            "old_value": {
               "key": "value"
             }
           }
         }
-      }
+      ]
     }
   }
 }

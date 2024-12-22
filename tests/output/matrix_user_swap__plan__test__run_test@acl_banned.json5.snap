@@ -1,37 +1,25 @@
 ---
 source: src/plan.rs
-expression: "json!({ \"errors\": errors, \"plan\": plan, })"
+expression: plan
 input_file: tests/input/acl_banned.json5
 ---
 {
-  "errors": [
-    {
-      "RoomFailed": [
-        {
-          "id": "!allow:example.com"
-        },
+  "new_user_id": "@user:new.com",
+  "rooms": {
+    "!allow:example.com": {
+      "errors": [
         "AclBanned"
       ]
     },
-    {
-      "RoomFailed": [
-        {
-          "id": "!deny-wildcard:example.com"
-        },
+    "!deny-wildcard:example.com": {
+      "errors": [
         "AclBanned"
       ]
     },
-    {
-      "RoomFailed": [
-        {
-          "id": "!deny:example.com"
-        },
+    "!deny:example.com": {
+      "errors": [
         "AclBanned"
       ]
     }
-  ],
-  "plan": {
-    "new_user_id": "@user:new.com",
-    "rooms": {}
   }
 }

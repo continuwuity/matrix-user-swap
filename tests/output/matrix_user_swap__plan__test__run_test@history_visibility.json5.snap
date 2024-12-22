@@ -1,57 +1,52 @@
 ---
 source: src/plan.rs
-expression: "json!({ \"errors\": errors, \"plan\": plan, })"
+expression: plan_json
 input_file: tests/input/history_visibility.json5
 ---
 {
-  "errors": [
-    {
-      "RestrictedHistoryVisibility": {
-        "already_joined": true,
-        "room": {
-          "id": "!already-joined:example.com"
-        },
-        "visibility": "joined"
-      }
+  "new_user_id": "@new:example.com",
+  "rooms": {
+    "!already-joined:example.com": {
+      "errors": [
+        {
+          "RestrictedHistoryVisibility": {
+            "already_joined": true,
+            "visibility": "joined"
+          }
+        }
+      ]
     },
-    {
-      "RestrictedHistoryVisibility": {
-        "already_joined": false,
-        "room": {
-          "id": "!invited:example.com"
-        },
-        "visibility": "invited"
-      }
+    "!invited:example.com": {
+      "errors": [
+        {
+          "RestrictedHistoryVisibility": {
+            "already_joined": false,
+            "visibility": "invited"
+          }
+        }
+      ],
+      "invite": true,
+      "join": true
     },
-    {
-      "RestrictedHistoryVisibility": {
-        "already_joined": false,
-        "room": {
-          "id": "!joined:example.com"
-        },
-        "visibility": "joined"
-      }
-    }
-  ],
-  "plan": {
-    "new_user_id": "@new:example.com",
-    "rooms": {
-      "!invited:example.com": {
-        "invite": true,
-        "join": true
-      },
-      "!joined:example.com": {
-        "invite": true,
-        "join": true
-      },
-      "!shared:example.com": {
-        "invite": true,
-        "join": true
-      },
-      "!word-readable:example.com": {
-        "invite": true,
-        "join": true
-      }
+    "!joined:example.com": {
+      "errors": [
+        {
+          "RestrictedHistoryVisibility": {
+            "already_joined": false,
+            "visibility": "joined"
+          }
+        }
+      ],
+      "invite": true,
+      "join": true
+    },
+    "!shared:example.com": {
+      "invite": true,
+      "join": true
+    },
+    "!word-readable:example.com": {
+      "invite": true,
+      "join": true
     }
   }
 }

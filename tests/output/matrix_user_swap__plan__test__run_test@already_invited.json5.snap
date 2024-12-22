@@ -1,22 +1,19 @@
 ---
 source: src/plan.rs
-expression: "json!({ \"errors\": errors, \"plan\": plan, })"
+expression: plan
 input_file: tests/input/already_invited.json5
 ---
 {
-  "errors": [],
-  "plan": {
-    "new_user_id": "@new:example.com",
-    "rooms": {
-      "!room-invite-only-cannot-invite:example.com": {
-        "join": true
-      },
-      "!room-invite-only:example.com": {
-        "join": true
-      },
-      "!room-public:example.com": {
-        "join": true
-      }
+  "new_user_id": "@new:example.com",
+  "rooms": {
+    "!room-invite-only-cannot-invite:example.com": {
+      "join": true
+    },
+    "!room-invite-only:example.com": {
+      "join": true
+    },
+    "!room-public:example.com": {
+      "join": true
     }
   }
 }

@@ -1,19 +1,16 @@
 ---
 source: src/plan.rs
-expression: "json!({ \"errors\": errors, \"plan\": plan, })"
+expression: plan_json
 input_file: tests/input/ignored_users_merge.json5
 ---
 {
-  "errors": [],
-  "plan": {
-    "global_account_data": {
-      "m.ignored_user_list": {
-        "@user-a:example.com": {},
-        "@user-b:example.com": {},
-        "@user-c:example.com": {}
-      }
-    },
-    "new_user_id": "@new:example.com",
-    "rooms": {}
-  }
+  "global_account_data": {
+    "m.ignored_user_list": {
+      "@user-a:example.com": {},
+      "@user-b:example.com": {},
+      "@user-c:example.com": {}
+    }
+  },
+  "new_user_id": "@new:example.com",
+  "rooms": {}
 }

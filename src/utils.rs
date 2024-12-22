@@ -9,8 +9,6 @@ use serde::Serialize;
 use serde_json::json;
 use thiserror::Error;
 
-use crate::state::StateAccessor;
-
 pub(crate) type JsonMap = BTreeMap<String, Raw<serde_json::Value>>;
 
 #[derive(Error, Debug, Serialize, Eq, PartialEq)]
@@ -81,33 +79,6 @@ pub(crate) struct RoomIdentity {
     pub(crate) id: OwnedRoomId,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) alias: Option<OwnedRoomAliasId>,
-}
-
-impl RoomIdentity {
-    /// Constructs a [`RoomIdentity`], possibly with an alias fetched from
-    /// `state`.
-    ///
-    /// If fetching the alias fails, [`Err`] is returned, including the error
-    /// and the [`RoomIdentity`] without an alias. Rooms that do not have an
-    /// alias are not an error.
-    pub(crate) async fn new<S: StateAccessor>(
-        state: &S,
-        id: OwnedRoomId,
-    ) -> Result<RoomIdentity, (RoomIdentity, S::Error)> {
-        match state.get_room_alias(&id).await {
-            Ok(alias) => Ok(RoomIdentity {
-                id,
-                alias,
-            }),
-            Err(e) => Err((
-                RoomIdentity {
-                    id,
-                    alias: None,
-                },
-                e,
-            )),
-        }
-    }
 }
 
 impl fmt::Display for RoomIdentity {

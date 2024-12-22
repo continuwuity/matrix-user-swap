@@ -1,17 +1,14 @@
 ---
 source: src/plan.rs
-expression: "json!({ \"errors\": errors, \"plan\": plan, })"
+expression: plan
 input_file: tests/input/leave.json5
 ---
 {
-  "errors": [],
-  "plan": {
-    "new_user_id": "@new:example.com",
-    "rooms": {
-      "!join:example.com": {
-        "invite": true,
-        "join": true
-      }
+  "new_user_id": "@new:example.com",
+  "rooms": {
+    "!join:example.com": {
+      "invite": true,
+      "join": true
     }
   }
 }

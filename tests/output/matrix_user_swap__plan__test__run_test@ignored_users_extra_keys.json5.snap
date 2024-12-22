@@ -1,6 +1,6 @@
 ---
 source: src/plan.rs
-expression: "json!({ \"errors\": errors, \"plan\": plan, })"
+expression: plan_json
 input_file: tests/input/ignored_users_extra_keys.json5
 ---
 {
@@ -17,21 +17,19 @@ input_file: tests/input/ignored_users_extra_keys.json5
       }
     }
   ],
-  "plan": {
-    "global_account_data": {
-      "m.ignored_user_list": {
-        "@user-a:example.com": {
-          "key": "value"
-        },
-        "@user-b:example.com": {
-          "new_key": "new_value"
-        },
-        "@user-c:example.com": {
-          "key": "value"
-        }
+  "global_account_data": {
+    "m.ignored_user_list": {
+      "@user-a:example.com": {
+        "key": "value"
+      },
+      "@user-b:example.com": {
+        "new_key": "new_value"
+      },
+      "@user-c:example.com": {
+        "key": "value"
       }
-    },
-    "new_user_id": "@new:example.com",
-    "rooms": {}
-  }
+    }
+  },
+  "new_user_id": "@new:example.com",
+  "rooms": {}
 }

@@ -25,7 +25,7 @@ use tracing as t;
 
 use crate::{
     state::StateAccessor,
-    utils::{merge_json, JsonMap, JsonMergeError, RoomIdentity},
+    utils::{merge_json, JsonMap, JsonMergeError},
     UserKind,
 };
 
@@ -40,7 +40,7 @@ pub(crate) struct PlanSettings {
 }
 
 #[derive(Serialize)]
-pub(crate) struct RoomPlan {
+pub(crate) struct RoomPlan<S: StateAccessor> {
     // TODO: store this as RoomIdentity instead of separating the alias and id?
     #[serde(skip_serializing_if = "is_default")]
     pub(crate) alias: Option<OwnedRoomAliasId>,
@@ -55,17 +55,24 @@ pub(crate) struct RoomPlan {
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub(crate) account_data:
         BTreeMap<RoomAccountDataEventType, Raw<AnyRoomAccountDataEventContent>>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(bound(serialize = "RoomPlanError<S>: Serialize"))]
+    pub(crate) errors: Vec<RoomPlanError<S>>,
 }
 
 #[derive(Serialize)]
-pub(crate) struct Plan {
+pub(crate) struct Plan<S: StateAccessor> {
     pub(crate) new_user_id: OwnedUserId,
-    pub(crate) rooms: BTreeMap<OwnedRoomId, RoomPlan>,
+    #[serde(bound(serialize = "RoomPlan<S>: Serialize"))]
+    pub(crate) rooms: BTreeMap<OwnedRoomId, RoomPlan<S>>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub(crate) global_account_data: BTreeMap<
         GlobalAccountDataEventType,
         Raw<AnyGlobalAccountDataEventContent>,
     >,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(bound(serialize = "PlanError<S>: Serialize"))]
+    pub(crate) errors: Vec<PlanError<S>>,
 }
 
 struct MakePlanState<'a, S: StateAccessor> {
@@ -75,9 +82,8 @@ struct MakePlanState<'a, S: StateAccessor> {
     new_user_id: OwnedUserId,
     old_user_id: OwnedUserId,
     new_joined_rooms: HashSet<OwnedRoomId>,
-    errors: Vec<PlanError<S>>,
 
-    plan: Plan,
+    plan: Plan<S>,
 }
 
 /// Errors that prevent determining migration plan entirely.
@@ -91,9 +97,18 @@ pub(crate) enum FatalPlanError<S: StateAccessor> {
     GetJoinedRooms(UserKind, #[source] S::Error),
 }
 
-/// Errors that prevent determining migration plan for a specific room.
 #[derive(Error, Debug, Serialize)]
 pub(crate) enum RoomPlanError<S: StateAccessor> {
+    #[error(
+        "failed to get alias. This is mostly inconsequential, and just might \
+         make it harder to identify the room in log messages."
+    )]
+    GetAlias(
+        #[source]
+        #[serde(skip)]
+        S::Error,
+    ),
+
     #[error("failed to get join rules")]
     GetJoinRule(
         #[source]
@@ -135,6 +150,53 @@ pub(crate) enum RoomPlanError<S: StateAccessor> {
         "new user's server is ACL banned from room. Will not attempt to join"
     )]
     AclBanned,
+
+    #[error("cannot migrate room tags")]
+    #[serde(bound(serialize = "RoomTagsPlanError<S>: Serialize"))]
+    RoomTagsFailed(#[source] RoomTagsPlanError<S>),
+
+    #[error(
+        "cannot migrate {} tag. Both the old and new users have a tag with \
+         this key, but they have different values. Old value is {}. New value \
+         is {}.",
+        _0.key,
+        _0.old_value,
+        _0.new_value
+    )]
+    RoomTagMerge(JsonMergeError),
+
+    #[error(
+        "old user does not have permission to copy their power level \
+         ({old_power_level}) to new user"
+    )]
+    CopyPowerLevel {
+        old_power_level: Int,
+    },
+
+    #[error(
+        "failed to get history visibility state. Unable to determine whether \
+         message history visible to the old user in this room may be hidden \
+         from the new user and lost if the old user leaves."
+    )]
+    GetHistoryVisibility(#[serde(skip)] S::Error),
+
+    #[error(
+        "some of the message history visible to the old user may not be \
+         visible to the new user, because the room has restricted visible \
+         message history to only messages sent after a user {}. If the old \
+         user leaves this room, some message history may be lost.{}",
+        describe_history_visibility(visibility),
+        if *already_joined {
+            "The new user has already joined this room, but may have joined \
+             it later than the old user."
+        } else {
+            ""
+        }
+    )]
+    RestrictedHistoryVisibility {
+        visibility: HistoryVisibility,
+        already_joined: bool,
+    },
 }
 
 /// Fatal errors migrating `m.tags` room account data event.
@@ -179,21 +241,6 @@ pub(crate) enum IgnoredUsersAccountDataPlanError<S: StateAccessor> {
 /// for the migration as a whole.
 #[derive(Error, Debug, Serialize)]
 pub(crate) enum PlanError<S: StateAccessor> {
-    #[error("cannot migrate room {_0}")]
-    #[serde(bound(serialize = "RoomPlanError<S>: Serialize"))]
-    RoomFailed(RoomIdentity, #[source] RoomPlanError<S>),
-
-    #[error("cannot migrate tags in room {_0}")]
-    #[serde(bound(serialize = "RoomTagsPlanError<S>: Serialize"))]
-    RoomTagsFailed(RoomIdentity, #[source] RoomTagsPlanError<S>),
-
-    #[error("cannot migrate {} tag in room {}. Both the old and new users have a tag with this key, but they have different values. Old value is {}. New value is {}.", error.key, room, error.old_value, error.new_value)]
-    #[serde(bound(serialize = "RoomTagsPlanError<S>: Serialize"))]
-    RoomTagMerge {
-        room: RoomIdentity,
-        error: JsonMergeError,
-    },
-
     #[error("cannot migrate direct message mapping")]
     #[serde(bound(serialize = "DirectAccountDataPlanError<S>: Serialize"))]
     DirectAccountDataFailed(#[from] DirectAccountDataPlanError<S>),
@@ -203,46 +250,6 @@ pub(crate) enum PlanError<S: StateAccessor> {
         serialize = "IgnoredUsersAccountDataPlanError<S>: Serialize"
     ))]
     IgnoredUsersAccountDataFailed(#[from] IgnoredUsersAccountDataPlanError<S>),
-
-    #[error(
-        "failed to get alias for room {_0}. This is mostly inconsequential, \
-         and just might make it harder to identify the room in log messages."
-    )]
-    AliasFailed(
-        OwnedRoomId,
-        #[source]
-        #[serde(skip)]
-        S::Error,
-    ),
-
-    #[error(
-        "old user does not have permission to copy their power level \
-         ({old_power_level}) to new user in room {room}"
-    )]
-    CannotCopyPowerLevel {
-        room: RoomIdentity,
-        old_power_level: Int,
-    },
-
-    #[error(
-        "failed to get history visibility state for room {room}. Unable to \
-         determine whether message history visible to the old user in this \
-         room may be hidden from the new user and lost if the old user leaves."
-    )]
-    GetHistoryVisibility {
-        room: RoomIdentity,
-        #[serde(skip)]
-        error: S::Error,
-    },
-
-    #[error(
-        "some of the message history visible to the old user in room {room} may not be visible to the new user, because the room has restricted visible message history to only messages sent after a user {}. If the old user leaves this room, some message history may be lost.{}", describe_history_visibility(visibility), if *already_joined { " The new user has already joined this room, but may have joined it later than the old user." } else { "" }
-    )]
-    RestrictedHistoryVisibility {
-        room: RoomIdentity,
-        visibility: HistoryVisibility,
-        already_joined: bool,
-    },
 
     #[error(
         "old user and new user both have entries in the ignored users list \
@@ -281,14 +288,31 @@ fn describe_history_visibility(
     }
 }
 
-impl RoomPlan {
-    /// Returns `true` if no actions need to be taken for this room.
+impl<S: StateAccessor> RoomPlan<S> {
+    /// Returns `true` if no actions need to be taken for this room and no
+    /// errors were recorded.
     fn is_empty(&self) -> bool {
         !self.invite
             && !self.join
             && !self.leave
             && self.power_level.is_none()
             && self.account_data.is_empty()
+            && self.errors.is_empty()
+    }
+}
+
+// Can't use the derive macro because it adds a S: Default bound :(
+impl<S: StateAccessor> Default for RoomPlan<S> {
+    fn default() -> RoomPlan<S> {
+        RoomPlan {
+            alias: None,
+            invite: false,
+            join: false,
+            leave: false,
+            power_level: None,
+            account_data: BTreeMap::new(),
+            errors: vec![],
+        }
     }
 }
 
@@ -306,37 +330,37 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
     }
 
     async fn plan_room(&mut self, room_id: OwnedRoomId) {
+        use RoomPlanError as Error;
+
+        let mut plan = RoomPlan::default();
+
         // TODO: skip fetching the alias when we don't need it (this can happen
         // if a room is already fully migrated and we don't need to print an
         // error)
-        let room = RoomIdentity::new(self.old, room_id.clone())
-            .await
-            .unwrap_or_else(|(room, e)| {
-                self.errors.push(PlanError::AliasFailed(room_id.clone(), e));
-                room
-            });
+        match self.old.get_room_alias(&room_id).await {
+            Ok(alias) => plan.alias = alias,
+            Err(error) => plan.errors.push(Error::GetAlias(error)),
+        }
 
-        let result = self.plan_room_inner(&room).await;
-        match result {
-            Ok(Some(plan)) => {
-                self.plan.rooms.insert(room_id, plan);
-            }
-            Ok(None) => (),
-            Err(e) => {
-                self.errors.push(PlanError::RoomFailed(room, e));
-            }
+        if let Err(error) = self.plan_room_inner(&room_id, &mut plan).await {
+            plan.errors.push(error);
+        }
+
+        if !plan.is_empty() {
+            self.plan.rooms.insert(room_id, plan);
         }
     }
 
     async fn plan_room_inner(
         &mut self,
-        room: &RoomIdentity,
-    ) -> Result<Option<RoomPlan>, RoomPlanError<S>> {
+        room_id: &RoomId,
+        plan: &mut RoomPlan<S>,
+    ) -> Result<(), RoomPlanError<S>> {
         use RoomPlanError as Error;
 
         let power_levels = self
             .old
-            .get_power_levels(&room.id)
+            .get_power_levels(room_id)
             .await
             .map_err(Error::GetPowerLevels)?;
 
@@ -349,8 +373,7 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
             ) {
                 Some(old_power_level)
             } else {
-                self.errors.push(PlanError::CannotCopyPowerLevel {
-                    room: room.clone(),
+                plan.errors.push(RoomPlanError::CopyPowerLevel {
                     old_power_level,
                 });
                 None
@@ -359,14 +382,14 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
             None
         };
 
-        let need_join = !self.new_joined_rooms.contains(&room.id);
+        let need_join = !self.new_joined_rooms.contains(room_id);
 
         let need_invite = if !need_join {
             false
         } else {
             let membership = self
                 .old
-                .get_membership(&room.id, &self.new_user_id)
+                .get_membership(room_id, &self.new_user_id)
                 .await
                 .map_err(Error::GetMembership)?
                 .unwrap_or(MembershipState::Leave);
@@ -377,7 +400,7 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
 
             let server_acl = self
                 .old
-                .get_server_acl(&room.id)
+                .get_server_acl(room_id)
                 .await
                 .map_err(Error::GetServerAcl)?;
 
@@ -391,7 +414,7 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
 
             let join_rule = self
                 .old
-                .get_join_rule(&room.id)
+                .get_join_rule(room_id)
                 .await
                 .map_err(Error::GetJoinRule)?;
             // TODO: handle 'allow' field of 'm.room.join_rules', which could
@@ -405,61 +428,49 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
             if !can_invite {
                 return Err(Error::CannotInvite);
             }
-        }
-
-        let mut account_data = BTreeMap::new();
-
-        self.plan_room_account_data_tags(room, &mut account_data).await;
-
-        self.check_history_visibility(room, need_join).await;
-
-        let room_plan = RoomPlan {
-            alias: room.alias.clone(),
-            invite: need_invite,
-            join: need_join,
-            leave: false,
-            power_level: set_power_level,
-            account_data,
         };
 
-        Ok(if !room_plan.is_empty() {
-            Some(room_plan)
-        } else {
-            None
-        })
+        plan.join = need_join;
+        plan.invite = need_invite;
+        plan.power_level = set_power_level;
+
+        self.plan_room_account_data_tags(room_id, plan).await;
+        self.check_history_visibility(room_id, plan).await;
+
+        Ok(())
     }
 
     async fn plan_room_account_data_tags(
         &mut self,
-        room: &RoomIdentity,
-        account_data: &mut BTreeMap<
-            RoomAccountDataEventType,
-            Raw<AnyRoomAccountDataEventContent>,
-        >,
+        room_id: &RoomId,
+        plan: &mut RoomPlan<S>,
     ) {
-        match self.plan_room_account_data_tags_inner(room).await {
+        match self
+            .plan_room_account_data_tags_inner(room_id, &mut plan.errors)
+            .await
+        {
             Ok(Some(content)) => {
-                account_data
+                plan.account_data
                     .insert(RoomAccountDataEventType::Tag, content.cast());
             }
             Ok(None) => (),
             Err(error) => {
-                self.errors
-                    .push(PlanError::RoomTagsFailed(room.clone(), error));
+                plan.errors.push(RoomPlanError::RoomTagsFailed(error));
             }
         }
     }
 
     async fn plan_room_account_data_tags_inner(
         &mut self,
-        room: &RoomIdentity,
+        room_id: &RoomId,
+        errors: &mut Vec<RoomPlanError<S>>,
     ) -> Result<Option<Raw<TagEventContent>>, RoomTagsPlanError<S>> {
         use RoomTagsPlanError as Error;
 
         let old = self
             .old
             .get_room_account_data_event::<JsonMap>(
-                &room.id,
+                room_id,
                 RoomAccountDataEventType::Tag,
             )
             .await
@@ -471,20 +482,18 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
         let new = self
             .new
             .get_room_account_data_event::<JsonMap>(
-                &room.id,
+                room_id,
                 RoomAccountDataEventType::Tag,
             )
             .await
             .map_err(|e| Error::GetEvent(UserKind::New, e))?
             .unwrap_or_default();
 
-        let (merged, errors) = merge_json(old, new);
+        let (merged, merge_errors) = merge_json(old, new);
 
-        let errors = errors.into_iter().map(|error| PlanError::RoomTagMerge {
-            room: room.clone(),
-            error,
-        });
-        self.errors.extend(errors);
+        let merge_errors =
+            merge_errors.into_iter().map(RoomPlanError::RoomTagMerge);
+        errors.extend(merge_errors);
         let merged = merged.map(|merged| {
             Raw::new(&merged)
                 .expect("serialization should always succeed")
@@ -496,35 +505,34 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
 
     async fn check_history_visibility(
         &mut self,
-        room: &RoomIdentity,
-        need_join: bool,
+        room_id: &RoomId,
+        plan: &mut RoomPlan<S>,
     ) {
-        let result = self.check_history_visibility_inner(room, need_join).await;
+        let result = self.check_history_visibility_inner(room_id, plan).await;
         if let Err(e) = result {
-            self.errors.push(e);
+            plan.errors.push(e);
         }
     }
 
     async fn check_history_visibility_inner(
         &self,
-        room: &RoomIdentity,
-        need_join: bool,
-    ) -> Result<(), PlanError<S>> {
-        let visibility =
-            self.old.get_history_visibility(&room.id).await.map_err(
-                |error| PlanError::GetHistoryVisibility {
-                    room: room.clone(),
-                    error,
-                },
-            )?;
+        room_id: &RoomId,
+        plan: &mut RoomPlan<S>,
+    ) -> Result<(), RoomPlanError<S>> {
+        use RoomPlanError as Error;
+
+        let visibility = self
+            .old
+            .get_history_visibility(room_id)
+            .await
+            .map_err(Error::GetHistoryVisibility)?;
         match visibility {
             Some(HistoryVisibility::WorldReadable)
             | Some(HistoryVisibility::Shared)
             | None => Ok(()),
-            Some(visibility) => Err(PlanError::RestrictedHistoryVisibility {
-                room: room.clone(),
+            Some(visibility) => Err(Error::RestrictedHistoryVisibility {
                 visibility,
-                already_joined: !need_join,
+                already_joined: !plan.join,
             }),
         }
     }
@@ -539,7 +547,7 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
             }
             Ok(None) => (),
             Err(e) => {
-                self.errors.push(e.into());
+                self.plan.errors.push(e.into());
             }
         }
     }
@@ -618,7 +626,7 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
             }
             Ok(None) => (),
             Err(e) => {
-                self.errors.push(e.into());
+                self.plan.errors.push(e.into());
             }
         }
     }
@@ -653,7 +661,9 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
 
         let (merged, errors) = merge_json(old, new);
 
-        self.errors.extend(errors.into_iter().map(PlanError::IgnoredUserMerge));
+        self.plan
+            .errors
+            .extend(errors.into_iter().map(PlanError::IgnoredUserMerge));
         let merged = merged.map(|merged| {
             Raw::new(&merged)
                 .expect("serialization should always succeed")
@@ -668,7 +678,7 @@ pub(crate) async fn make_plan<S: StateAccessor>(
     settings: PlanSettings,
     old: &S,
     new: &S,
-) -> Result<(Plan, Vec<PlanError<S>>), FatalPlanError<S>> {
+) -> Result<Plan<S>, FatalPlanError<S>> {
     use FatalPlanError as Error;
 
     let old_user_id = old
@@ -706,12 +716,12 @@ pub(crate) async fn make_plan<S: StateAccessor>(
         old_user_id,
         new_user_id: new_user_id.clone(),
         new_joined_rooms,
-        errors: vec![],
 
         plan: Plan {
             new_user_id,
             rooms: BTreeMap::new(),
             global_account_data: BTreeMap::new(),
+            errors: vec![],
         },
     };
 
@@ -722,10 +732,10 @@ pub(crate) async fn make_plan<S: StateAccessor>(
     state.plan_account_data_direct().await;
     state.plan_account_data_ignored_users().await;
 
-    Ok((state.plan, state.errors))
+    Ok(state.plan)
 }
 
-impl fmt::Display for Plan {
+impl<S: StateAccessor> fmt::Display for Plan<S> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         writeln!(f, "New userid: {}", self.new_user_id)?;
 
@@ -767,7 +777,6 @@ mod test {
 
     use insta::assert_json_snapshot;
     use serde::Deserialize;
-    use serde_json::json;
 
     use super::*;
     use crate::state::mock::{MockState, MockStateAccessor};
@@ -787,14 +796,12 @@ mod test {
 
         let old = MockStateAccessor::new(UserKind::Old, &input.state);
         let new = MockStateAccessor::new(UserKind::New, &input.state);
-        let (plan, errors) =
-            make_plan(input.settings, &old, &new).await.unwrap();
+        let plan = make_plan(input.settings, &old, &new).await.unwrap();
+        // Needed because assert_json_snapshot! otherwise mangles Raw<_>
+        let plan_json = serde_json::to_value(&plan).unwrap();
 
         insta::with_settings!({ snapshot_path => "../tests/output" }, {
-            assert_json_snapshot!(json!({
-                "errors": errors,
-                "plan": plan,
-            }));
+            assert_json_snapshot!(plan_json);
         });
     }
 

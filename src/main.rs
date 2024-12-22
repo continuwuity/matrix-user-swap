@@ -20,6 +20,7 @@ mod utils;
 use crate::{
     plan::{make_plan, FatalPlanError, PlanSettings},
     state::{ClientStateAccessor, ClientStateError},
+    utils::RoomIdentity,
 };
 
 #[derive(Debug, Display, Copy, Clone, Serialize)]
@@ -113,10 +114,23 @@ async fn try_main() -> Result<(), Error> {
         .await
         .map_err(|e| Error::InitClientState(UserKind::New, e))?;
 
-    let (plan, errors) = make_plan(settings, &old, &new).await?;
+    let plan = make_plan(settings, &old, &new).await?;
 
-    for error in errors {
+    for error in &plan.errors {
         t::error!("{}", error.display_with_sources("\n  Caused by: "));
+    }
+
+    for (room_id, room_plan) in &plan.rooms {
+        let room = RoomIdentity {
+            id: room_id.clone(),
+            alias: room_plan.alias.clone(),
+        };
+        if !room_plan.errors.is_empty() {
+            t::error!("Errors migrating room {room}:");
+            for error in &room_plan.errors {
+                t::error!("{}", error.display_with_sources("\n  Caused by: "));
+            }
+        }
     }
 
     println!("{plan}");

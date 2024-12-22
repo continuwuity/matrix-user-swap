@@ -1,21 +1,18 @@
 ---
 source: src/plan.rs
-expression: "json!({ \"errors\": errors, \"plan\": plan, })"
+expression: plan_json
 input_file: tests/input/room_tags_merge.json5
 ---
 {
-  "errors": [],
-  "plan": {
-    "new_user_id": "@new:example.com",
-    "rooms": {
-      "!room1:example.com": {
-        "account_data": {
-          "m.tag": {
-            "m.favourite": {
-              "order": 1
-            },
-            "u.other": {}
-          }
+  "new_user_id": "@new:example.com",
+  "rooms": {
+    "!room1:example.com": {
+      "account_data": {
+        "m.tag": {
+          "m.favourite": {
+            "order": 1
+          },
+          "u.other": {}
         }
       }
     }
