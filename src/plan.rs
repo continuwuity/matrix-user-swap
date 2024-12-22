@@ -201,9 +201,8 @@ pub(crate) enum RoomPlanError<S: StateAccessor> {
 
     #[error(
         "some of the message history visible to the old user may not be \
-         visible to the new user, because the room has restricted visible \
-         message history to only messages sent after a user {}. If the old \
-         user leaves this room, some message history may be lost.{}",
+         visible to the new user, because the room {}. If the old  user leaves \
+         this room, some message history may be lost.{}",
         describe_history_visibility(visibility),
         if *already_joined {
             "The new user has already joined this room, but may have joined \
