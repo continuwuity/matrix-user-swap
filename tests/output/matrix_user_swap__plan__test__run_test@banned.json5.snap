@@ -1,6 +1,6 @@
 ---
 source: src/plan.rs
-expression: plan
+expression: plan_json
 input_file: tests/input/banned.json5
 ---
 {
@@ -8,12 +8,16 @@ input_file: tests/input/banned.json5
   "rooms": {
     "!mod-room:example.com": {
       "errors": [
-        "Banned"
+        {
+          "Join": "Banned"
+        }
       ]
     },
     "!simple-room:example.com": {
       "errors": [
-        "Banned"
+        {
+          "Join": "Banned"
+        }
       ]
     }
   }

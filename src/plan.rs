@@ -100,24 +100,7 @@ pub(crate) enum FatalPlanError<S: StateAccessor> {
 }
 
 #[derive(Error, Debug, Serialize)]
-pub(crate) enum RoomPlanError<S: StateAccessor> {
-    #[error(
-        "failed to get alias. This is mostly inconsequential, and just might \
-         make it harder to identify the room in log messages."
-    )]
-    GetAlias(
-        #[source]
-        #[serde(skip)]
-        S::Error,
-    ),
-
-    #[error("failed to get join rules")]
-    GetJoinRule(
-        #[source]
-        #[serde(skip)]
-        S::Error,
-    ),
-
+pub(crate) enum JoinPlanError<S: StateAccessor> {
     #[error("failed to get new user membership state")]
     GetMembership(
         #[source]
@@ -125,8 +108,8 @@ pub(crate) enum RoomPlanError<S: StateAccessor> {
         S::Error,
     ),
 
-    #[error("failed to get power levels")]
-    GetPowerLevels(
+    #[error("failed to get join rules")]
+    GetJoinRule(
         #[source]
         #[serde(skip)]
         S::Error,
@@ -152,6 +135,30 @@ pub(crate) enum RoomPlanError<S: StateAccessor> {
         "new user's server is ACL banned from room. Will not attempt to join"
     )]
     AclBanned,
+}
+
+#[derive(Error, Debug, Serialize)]
+pub(crate) enum RoomPlanError<S: StateAccessor> {
+    #[error(
+        "failed to get alias. This is mostly inconsequential, and just might \
+         make it harder to identify the room in log messages."
+    )]
+    GetAlias(
+        #[source]
+        #[serde(skip)]
+        S::Error,
+    ),
+
+    #[error("failed to get power levels")]
+    GetPowerLevels(
+        #[source]
+        #[serde(skip)]
+        S::Error,
+    ),
+
+    #[error("cannot join room")]
+    #[serde(bound(serialize = "JoinPlanError<S>: Serialize"))]
+    Join(#[from] JoinPlanError<S>),
 
     #[error("cannot migrate room tags")]
     #[serde(bound(serialize = "RoomTagsPlanError<S>: Serialize"))]
@@ -375,7 +382,7 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
                     joined = true;
                 }
                 Err(error) => {
-                    plan.errors.push(error);
+                    plan.errors.push(Error::Join(error));
                 }
             }
         }
@@ -432,8 +439,8 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
         &mut self,
         room_id: &RoomId,
         power_levels: &RoomPowerLevels,
-    ) -> Result<bool, RoomPlanError<S>> {
-        use RoomPlanError as Error;
+    ) -> Result<bool, JoinPlanError<S>> {
+        use JoinPlanError as Error;
 
         let membership = self
             .old

@@ -1,6 +1,6 @@
 ---
 source: src/plan.rs
-expression: plan
+expression: plan_json
 input_file: tests/input/cannot_invite_or_copy_power_levels.json5
 ---
 {
@@ -13,7 +13,9 @@ input_file: tests/input/cannot_invite_or_copy_power_levels.json5
             "old_power_level": 50
           }
         },
-        "CannotInvite"
+        {
+          "Join": "CannotInvite"
+        }
       ]
     }
   }

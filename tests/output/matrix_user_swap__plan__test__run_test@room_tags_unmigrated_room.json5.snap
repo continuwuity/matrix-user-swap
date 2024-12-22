@@ -1,6 +1,6 @@
 ---
 source: src/plan.rs
-expression: plan
+expression: plan_json
 input_file: tests/input/room_tags_unmigrated_room.json5
 ---
 {
@@ -8,7 +8,9 @@ input_file: tests/input/room_tags_unmigrated_room.json5
   "rooms": {
     "!room1:example.com": {
       "errors": [
-        "CannotInvite"
+        {
+          "Join": "CannotInvite"
+        }
       ]
     }
   }

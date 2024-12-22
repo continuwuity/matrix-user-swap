@@ -13,12 +13,16 @@ input_file: tests/input/cannot_invite.json5
     },
     "!power-levels-room:example.com": {
       "errors": [
-        "CannotInvite"
+        {
+          "Join": "CannotInvite"
+        }
       ]
     },
     "!simple-room:example.com": {
       "errors": [
-        "CannotInvite"
+        {
+          "Join": "CannotInvite"
+        }
       ]
     }
   }

@@ -13,7 +13,9 @@ input_file: tests/input/cannot_invite_history_visibility.json5
     },
     "!simple-room:example.com": {
       "errors": [
-        "CannotInvite",
+        {
+          "Join": "CannotInvite"
+        },
         {
           "RestrictedHistoryVisibility": {
             "already_joined": false,

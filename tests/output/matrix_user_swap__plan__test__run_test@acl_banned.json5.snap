@@ -1,6 +1,6 @@
 ---
 source: src/plan.rs
-expression: plan
+expression: plan_json
 input_file: tests/input/acl_banned.json5
 ---
 {
@@ -8,17 +8,23 @@ input_file: tests/input/acl_banned.json5
   "rooms": {
     "!allow:example.com": {
       "errors": [
-        "AclBanned"
+        {
+          "Join": "AclBanned"
+        }
       ]
     },
     "!deny-wildcard:example.com": {
       "errors": [
-        "AclBanned"
+        {
+          "Join": "AclBanned"
+        }
       ]
     },
     "!deny:example.com": {
       "errors": [
-        "AclBanned"
+        {
+          "Join": "AclBanned"
+        }
       ]
     }
   }
