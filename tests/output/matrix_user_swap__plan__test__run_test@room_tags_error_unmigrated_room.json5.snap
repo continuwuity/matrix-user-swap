@@ -1,0 +1,15 @@
+---
+source: src/plan.rs
+expression: plan_json
+input_file: tests/input/room_tags_error_unmigrated_room.json5
+---
+{
+  "new_user_id": "@new:example.com",
+  "rooms": {
+    "!room1:example.com": {
+      "errors": [
+        "CannotInvite"
+      ]
+    }
+  }
+}
