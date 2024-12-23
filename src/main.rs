@@ -181,6 +181,24 @@ fn print_plan(plan: &Plan<ClientStateAccessor>) {
         println!();
     }
 
+    println!();
+    println!("Key:");
+    println!(
+        "  errors: one or more errors were encountered, which may prevent \
+         completely migrating this room"
+    );
+    println!("  invite: the old user will invite the new user to this room");
+    println!("  join: the new user will join this room");
+    println!("  leave: the old user will leave this room");
+    println!(
+        "  power_level: the old user will promote the new user to their \
+         current power level"
+    );
+    println!(
+        "  tags: room tags (from the m.room.tags account data event) will be \
+         copied from the old user to the new user"
+    );
+
     if !plan.global_account_data.is_empty() {
         println!();
         println!("Migrating the following global account data events:");
