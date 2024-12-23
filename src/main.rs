@@ -1,11 +1,13 @@
-use std::process::ExitCode;
+use std::{mem, process::ExitCode};
 
 use clap::Parser;
 use derive_more::Display;
+use rand::{thread_rng, Rng};
 use ruma::{
     api,
     client::{self, HttpClient},
     events::RoomAccountDataEventType,
+    server_name, OwnedRoomAliasId, OwnedRoomId, RoomAliasId, RoomId,
 };
 use serde::Serialize;
 use thiserror::Error;
@@ -54,6 +56,12 @@ struct Cli {
     /// that everything is correct.
     #[clap(long)]
     leave: bool,
+
+    /// Anonymize room IDs/aliases to make sharing example output easier
+    ///
+    /// This will _not_ anonymize server names and room IDs/aliases.
+    #[clap(long)]
+    anonymize: bool,
 }
 
 pub(crate) type Client = client::Client<client::http_client::Reqwest>;
@@ -94,6 +102,35 @@ fn init_logging() -> Result<(), InitLoggingError> {
         .with(env_filter)
         .init();
     Ok(())
+}
+
+fn anonymize_room_id(room_id: &RoomId) -> OwnedRoomId {
+    let server_name = room_id
+        .server_name()
+        .unwrap_or(server_name!("invalid-server-name.com"));
+    RoomId::new(server_name)
+}
+
+fn anonymize_room_alias(room_alias: &RoomAliasId) -> OwnedRoomAliasId {
+    let alias = format!(
+        "#alias-{}:{}",
+        thread_rng().gen_range(0u32..1024),
+        room_alias.server_name()
+    );
+    RoomAliasId::parse(&alias)
+        .expect("just constructed alias id should be valid")
+}
+
+fn anonymize_plan(plan: &mut Plan<ClientStateAccessor>) {
+    // This dance is needed because RoomPlan doesn't impl Clone
+    let rooms = mem::take(&mut plan.rooms);
+    plan.rooms = rooms
+        .into_iter()
+        .map(|(room_id, mut room)| {
+            room.alias = room.alias.as_deref().map(anonymize_room_alias);
+            (anonymize_room_id(&room_id), room)
+        })
+        .collect();
 }
 
 fn print_column(label: &str, enabled: bool) {
@@ -211,7 +248,11 @@ async fn try_main() -> Result<(), Error> {
         .await
         .map_err(|e| Error::InitClientState(UserKind::New, e))?;
 
-    let plan = make_plan(settings, &old, &new).await?;
+    let mut plan = make_plan(settings, &old, &new).await?;
+
+    if cli.anonymize {
+        anonymize_plan(&mut plan);
+    }
 
     print_plan(&plan);
 
