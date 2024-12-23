@@ -144,7 +144,7 @@ fn print_column(label: &str, enabled: bool) {
 }
 
 fn print_plan(plan: &Plan<ClientStateAccessor>) {
-    println!("Attempting to migrate the following rooms:");
+    println!("Attempting to migrate the following rooms:\n");
 
     let max_room_len = 48;
 
