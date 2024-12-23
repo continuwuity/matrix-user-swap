@@ -1,5 +1,11 @@
 use ruma::{
-    api::{self, client::error::ErrorKind, error::FromHttpResponseError},
+    api::{
+        self,
+        client::{
+            error::ErrorKind, membership::invite_user::v3::InvitationRecipient,
+        },
+        error::FromHttpResponseError,
+    },
     client,
     events::{
         room::{
@@ -154,6 +160,20 @@ pub(crate) trait ReadState {
             .await?;
         Ok(extract.and_then(|extract| extract.history_visibility))
     }
+}
+
+pub(crate) trait WriteState {
+    type Error;
+
+    async fn invite(
+        &self,
+        room_id: &RoomId,
+        user_id: &UserId,
+    ) -> Result<(), Self::Error>;
+
+    async fn join(&self, room_id: &RoomId) -> Result<(), Self::Error>;
+
+    async fn leave(&self, room_id: &RoomId) -> Result<(), Self::Error>;
 }
 
 #[derive(Error, Debug)]
@@ -315,5 +335,48 @@ impl ReadState for ClientStateAccessor {
             .deserialize_as::<T>()
             .map_err(|e| Error::RoomAccountDataEventDeserialize(kind, e))?;
         Ok(Some(content))
+    }
+}
+
+#[derive(Error, Debug)]
+pub(crate) enum ClientWriteStateError {
+    #[error("client api request failed")]
+    Request(#[from] RumaError),
+}
+
+impl WriteState for ClientStateAccessor {
+    type Error = ClientWriteStateError;
+
+    async fn invite(
+        &self,
+        room_id: &RoomId,
+        user_id: &UserId,
+    ) -> Result<(), Self::Error> {
+        let recipient = InvitationRecipient::UserId {
+            user_id: user_id.to_owned(),
+        };
+        let request = api::client::membership::invite_user::v3::Request::new(
+            room_id.to_owned(),
+            recipient,
+        );
+        self.client.send_request(request).await?;
+        Ok(())
+    }
+
+    async fn join(&self, room_id: &RoomId) -> Result<(), Self::Error> {
+        let request =
+            api::client::membership::join_room_by_id::v3::Request::new(
+                room_id.to_owned(),
+            );
+        self.client.send_request(request).await?;
+        Ok(())
+    }
+
+    async fn leave(&self, room_id: &RoomId) -> Result<(), Self::Error> {
+        let request = api::client::membership::leave_room::v3::Request::new(
+            room_id.to_owned(),
+        );
+        self.client.send_request(request).await?;
+        Ok(())
     }
 }
