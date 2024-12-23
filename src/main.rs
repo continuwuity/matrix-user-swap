@@ -234,6 +234,35 @@ fn print_plan(plan: &Plan<ClientStateAccessor>) {
             }
         }
     }
+
+    println!();
+}
+
+fn print_warnings() {
+    println!(
+        "Warning: the tool will only attempt to migrate the following account \
+         data event types. It is possible that there are other account data \
+         events that should be migrated, but the tool doesn't have support \
+         for. There is no efficient way to determine a full list of account \
+         data events for a user, so there will be no warnings for \
+         unrecognized types:"
+    );
+    println!(" - m.direct (global)");
+    println!(" - m.ignored_user_list (global)");
+    println!(" - m.tag (per-room)");
+    println!();
+    println!(
+        "Warning: the tool will warn about rooms where the current history \
+         visibility setting may result in lost history when the old user \
+         leaves the room. There is no efficient way to determine whether a \
+         previous history visibility setting may result in lost history, so \
+         this check may have false negatives."
+    );
+    println!();
+    println!(
+        "Warning: the tool does not currently attempt to migrate per-room \
+         avatars or displaynames."
+    );
 }
 
 async fn try_main() -> Result<(), Error> {
@@ -273,6 +302,7 @@ async fn try_main() -> Result<(), Error> {
     }
 
     print_plan(&plan);
+    print_warnings();
 
     Ok(())
 }
