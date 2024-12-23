@@ -10,7 +10,7 @@ use ruma::{
 use serde::{de::DeserializeOwned, Deserialize};
 use thiserror::Error;
 
-use crate::{state::StateAccessor, UserKind};
+use crate::{state::ReadState, UserKind};
 
 #[derive(Debug, Deserialize)]
 struct StateEvent {
@@ -107,7 +107,7 @@ impl<'a> MockStateAccessor<'a> {
 
 #[derive(Error, Debug)]
 #[allow(clippy::enum_variant_names)]
-pub(crate) enum MockStateError {
+pub(crate) enum MockReadStateError {
     #[error("{_0} event did not match expected schema")]
     StateEventDeserialize(StateEventType, #[source] serde_json::Error),
 
@@ -124,10 +124,10 @@ pub(crate) enum MockStateError {
     ),
 }
 
-impl StateAccessor for MockStateAccessor<'_> {
-    type Error = MockStateError;
+impl ReadState for MockStateAccessor<'_> {
+    type Error = MockReadStateError;
 
-    async fn get_user_id(&self) -> Result<OwnedUserId, MockStateError> {
+    async fn get_user_id(&self) -> Result<OwnedUserId, MockReadStateError> {
         Ok(self.user().user_id.clone())
     }
 
@@ -136,8 +136,8 @@ impl StateAccessor for MockStateAccessor<'_> {
         room_id: &RoomId,
         kind: StateEventType,
         state_key: String,
-    ) -> Result<Option<T>, MockStateError> {
-        use MockStateError as Error;
+    ) -> Result<Option<T>, MockReadStateError> {
+        use MockReadStateError as Error;
 
         let key = (kind, state_key);
         let Some(room) = self.state.rooms.get(room_id) else {
@@ -154,8 +154,8 @@ impl StateAccessor for MockStateAccessor<'_> {
     async fn get_global_account_data_event<T: DeserializeOwned>(
         &self,
         kind: GlobalAccountDataEventType,
-    ) -> Result<Option<T>, MockStateError> {
-        use MockStateError as Error;
+    ) -> Result<Option<T>, MockReadStateError> {
+        use MockReadStateError as Error;
 
         let Some(content) = self.user().global_account_data.get(&kind) else {
             return Ok(None);
@@ -169,8 +169,8 @@ impl StateAccessor for MockStateAccessor<'_> {
         &self,
         room_id: &RoomId,
         kind: RoomAccountDataEventType,
-    ) -> Result<Option<T>, MockStateError> {
-        use MockStateError as Error;
+    ) -> Result<Option<T>, MockReadStateError> {
+        use MockReadStateError as Error;
 
         let Some(room) = self.user().room_account_data.get(room_id) else {
             return Ok(None);
@@ -185,7 +185,7 @@ impl StateAccessor for MockStateAccessor<'_> {
 
     async fn get_joined_rooms(
         &self,
-    ) -> Result<Vec<OwnedRoomId>, MockStateError> {
+    ) -> Result<Vec<OwnedRoomId>, MockReadStateError> {
         let user_id = self.get_user_id().await?;
         let mut rooms = vec![];
         for room_id in self.state.rooms.keys() {

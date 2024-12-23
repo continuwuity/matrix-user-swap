@@ -24,7 +24,7 @@ use crate::{Client, RumaError};
 #[cfg(test)]
 pub(crate) mod mock;
 
-pub(crate) trait StateAccessor {
+pub(crate) trait ReadState {
     type Error: std::error::Error + 'static;
 
     async fn get_user_id(&self) -> Result<OwnedUserId, Self::Error>;
@@ -157,7 +157,7 @@ pub(crate) trait StateAccessor {
 }
 
 #[derive(Error, Debug)]
-pub(crate) enum ClientStateError {
+pub(crate) enum ClientReadStateError {
     #[error("client api request failed")]
     Request(#[from] RumaError),
 
@@ -186,7 +186,7 @@ pub(crate) struct ClientStateAccessor {
 impl ClientStateAccessor {
     pub(crate) async fn new(
         client: Client,
-    ) -> Result<ClientStateAccessor, ClientStateError> {
+    ) -> Result<ClientStateAccessor, ClientReadStateError> {
         let request = api::client::account::whoami::v3::Request::new();
         let response = client.send_request(request).await?;
 
@@ -197,10 +197,10 @@ impl ClientStateAccessor {
     }
 }
 
-impl StateAccessor for ClientStateAccessor {
-    type Error = ClientStateError;
+impl ReadState for ClientStateAccessor {
+    type Error = ClientReadStateError;
 
-    async fn get_user_id(&self) -> Result<OwnedUserId, ClientStateError> {
+    async fn get_user_id(&self) -> Result<OwnedUserId, ClientReadStateError> {
         Ok(self.user_id.clone())
     }
 
@@ -209,8 +209,8 @@ impl StateAccessor for ClientStateAccessor {
         room_id: &RoomId,
         kind: StateEventType,
         state_key: String,
-    ) -> Result<Option<T>, ClientStateError> {
-        use ClientStateError as Error;
+    ) -> Result<Option<T>, ClientReadStateError> {
+        use ClientReadStateError as Error;
 
         let request =
             api::client::state::get_state_events_for_key::v3::Request::new(
@@ -243,7 +243,7 @@ impl StateAccessor for ClientStateAccessor {
 
     async fn get_joined_rooms(
         &self,
-    ) -> Result<Vec<OwnedRoomId>, ClientStateError> {
+    ) -> Result<Vec<OwnedRoomId>, ClientReadStateError> {
         let request = api::client::membership::joined_rooms::v3::Request::new();
         let response = self.client.send_request(request).await?;
         Ok(response.joined_rooms)
@@ -253,7 +253,7 @@ impl StateAccessor for ClientStateAccessor {
         &self,
         kind: GlobalAccountDataEventType,
     ) -> Result<Option<T>, Self::Error> {
-        use ClientStateError as Error;
+        use ClientReadStateError as Error;
 
         let request =
             api::client::config::get_global_account_data::v3::Request::new(
@@ -287,7 +287,7 @@ impl StateAccessor for ClientStateAccessor {
         room_id: &RoomId,
         kind: RoomAccountDataEventType,
     ) -> Result<Option<T>, Self::Error> {
-        use ClientStateError as Error;
+        use ClientReadStateError as Error;
 
         let request =
             api::client::config::get_room_account_data::v3::Request::new(

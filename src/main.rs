@@ -22,7 +22,7 @@ mod utils;
 
 use crate::{
     plan::{make_plan, FatalPlanError, Plan, PlanSettings},
-    state::{ClientStateAccessor, ClientStateError},
+    state::{ClientReadStateError, ClientStateAccessor},
     utils::RoomIdentity,
 };
 
@@ -78,7 +78,7 @@ enum Error {
     InitClient(UserKind, #[source] RumaError),
 
     #[error("failed to initialize state accessor for {_0} user")]
-    InitClientState(UserKind, #[source] ClientStateError),
+    InitClientState(UserKind, #[source] ClientReadStateError),
 
     #[error("failed to compute migration plan")]
     MakePlan(#[from] FatalPlanError<ClientStateAccessor>),

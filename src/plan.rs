@@ -23,7 +23,7 @@ use thiserror::Error;
 use tracing as t;
 
 use crate::{
-    state::StateAccessor,
+    state::ReadState,
     utils::{merge_json, JsonMap, JsonMergeError},
     UserKind,
 };
@@ -42,7 +42,7 @@ pub(crate) type RoomAccountData =
     BTreeMap<RoomAccountDataEventType, Raw<AnyRoomAccountDataEventContent>>;
 
 #[derive(Serialize)]
-pub(crate) struct RoomPlan<S: StateAccessor> {
+pub(crate) struct RoomPlan<S: ReadState> {
     // TODO: store this as RoomIdentity instead of separating the alias and id?
     #[serde(skip_serializing_if = "is_default")]
     pub(crate) alias: Option<OwnedRoomAliasId>,
@@ -62,7 +62,7 @@ pub(crate) struct RoomPlan<S: StateAccessor> {
 }
 
 #[derive(Serialize)]
-pub(crate) struct Plan<S: StateAccessor> {
+pub(crate) struct Plan<S: ReadState> {
     pub(crate) new_user_id: OwnedUserId,
     #[serde(bound(serialize = "RoomPlan<S>: Serialize"))]
     pub(crate) rooms: BTreeMap<OwnedRoomId, RoomPlan<S>>,
@@ -76,7 +76,7 @@ pub(crate) struct Plan<S: StateAccessor> {
     pub(crate) errors: Vec<PlanError<S>>,
 }
 
-struct MakePlanState<'a, S: StateAccessor> {
+struct MakePlanState<'a, S: ReadState> {
     settings: PlanSettings,
     old: &'a S,
     new: &'a S,
@@ -91,7 +91,7 @@ struct MakePlanState<'a, S: StateAccessor> {
 /// Errors that prevent determining migration plan entirely.
 #[derive(Error, Debug)]
 #[allow(clippy::enum_variant_names)]
-pub(crate) enum FatalPlanError<S: StateAccessor> {
+pub(crate) enum FatalPlanError<S: ReadState> {
     #[error("failed to get user id for {_0} user")]
     GetUserId(UserKind, #[source] S::Error),
 
@@ -100,7 +100,7 @@ pub(crate) enum FatalPlanError<S: StateAccessor> {
 }
 
 #[derive(Error, Debug, Serialize)]
-pub(crate) enum JoinPlanError<S: StateAccessor> {
+pub(crate) enum JoinPlanError<S: ReadState> {
     #[error("failed to get new user membership state")]
     GetMembership(
         #[source]
@@ -144,7 +144,7 @@ pub(crate) enum JoinPlanError<S: StateAccessor> {
 }
 
 #[derive(Error, Debug, Serialize)]
-pub(crate) enum RoomPlanError<S: StateAccessor> {
+pub(crate) enum RoomPlanError<S: ReadState> {
     #[error(
         "failed to get alias. This is mostly inconsequential, and just might \
          make it harder to identify the room in log messages."
@@ -218,7 +218,7 @@ pub(crate) enum RoomPlanError<S: StateAccessor> {
 
 /// Fatal errors migrating `m.tags` room account data event.
 #[derive(Error, Debug, Serialize)]
-pub(crate) enum RoomTagsPlanError<S: StateAccessor> {
+pub(crate) enum RoomTagsPlanError<S: ReadState> {
     #[error("failed to get tags for {_0} user")]
     GetEvent(
         UserKind,
@@ -230,7 +230,7 @@ pub(crate) enum RoomTagsPlanError<S: StateAccessor> {
 
 /// Fatal errors migrating `m.direct` global account data event.
 #[derive(Error, Debug, Serialize)]
-pub(crate) enum DirectAccountDataPlanError<S: StateAccessor> {
+pub(crate) enum DirectAccountDataPlanError<S: ReadState> {
     #[error("failed to get direct message mapping for {_0} user")]
     GetEvent(
         UserKind,
@@ -242,7 +242,7 @@ pub(crate) enum DirectAccountDataPlanError<S: StateAccessor> {
 
 /// Fatal errors migrating `m.ignored_user_list` global account data event.
 #[derive(Error, Debug, Serialize)]
-pub(crate) enum IgnoredUsersAccountDataPlanError<S: StateAccessor> {
+pub(crate) enum IgnoredUsersAccountDataPlanError<S: ReadState> {
     #[error("failed to get ignored users list for {_0} user")]
     GetEvent(
         UserKind,
@@ -257,7 +257,7 @@ pub(crate) enum IgnoredUsersAccountDataPlanError<S: StateAccessor> {
 /// These may block fully migrating particular rooms or data, but are not fatal
 /// for the migration as a whole.
 #[derive(Error, Debug, Serialize)]
-pub(crate) enum PlanError<S: StateAccessor> {
+pub(crate) enum PlanError<S: ReadState> {
     #[error("cannot migrate direct message mapping")]
     #[serde(bound(serialize = "DirectAccountDataPlanError<S>: Serialize"))]
     DirectAccountDataFailed(#[from] DirectAccountDataPlanError<S>),
@@ -305,7 +305,7 @@ fn describe_history_visibility(
     }
 }
 
-impl<S: StateAccessor> RoomPlan<S> {
+impl<S: ReadState> RoomPlan<S> {
     /// Returns `true` if no actions need to be taken for this room and no
     /// errors were recorded.
     fn is_empty(&self) -> bool {
@@ -319,7 +319,7 @@ impl<S: StateAccessor> RoomPlan<S> {
 }
 
 // Can't use the derive macro because it adds a S: Default bound :(
-impl<S: StateAccessor> Default for RoomPlan<S> {
+impl<S: ReadState> Default for RoomPlan<S> {
     fn default() -> RoomPlan<S> {
         RoomPlan {
             alias: None,
@@ -333,7 +333,7 @@ impl<S: StateAccessor> Default for RoomPlan<S> {
     }
 }
 
-impl<S: StateAccessor> MakePlanState<'_, S> {
+impl<S: ReadState> MakePlanState<'_, S> {
     /// Returns whether the new user is expected to be joined to a given room
     /// after the migration is executed.
     fn will_join(&self, room_id: &RoomId) -> bool {
@@ -771,7 +771,7 @@ impl<S: StateAccessor> MakePlanState<'_, S> {
     }
 }
 
-pub(crate) async fn make_plan<S: StateAccessor>(
+pub(crate) async fn make_plan<S: ReadState>(
     settings: PlanSettings,
     old: &S,
     new: &S,
