@@ -16,11 +16,13 @@ use tracing::level_filters::LevelFilter;
 use tracing_subscriber::{self, prelude::*};
 use wee_woo::ErrorExt;
 
+mod execute;
 mod plan;
 mod state;
 mod utils;
 
 use crate::{
+    execute::{execute_plan, ExecuteError},
     plan::{make_plan, FatalPlanError, Plan, PlanSettings},
     state::{ClientReadStateError, ClientStateAccessor},
     utils::RoomIdentity,
@@ -82,6 +84,9 @@ enum Error {
 
     #[error("failed to compute migration plan")]
     MakePlan(#[from] FatalPlanError<ClientStateAccessor>),
+
+    #[error("failed to execute migration plan")]
+    ExecutePlan(#[from] ExecuteError),
 }
 
 #[derive(Error, Debug)]
@@ -303,6 +308,8 @@ async fn try_main() -> Result<(), Error> {
 
     print_plan(&plan);
     print_warnings();
+
+    execute_plan(&plan, &old, &new).await?;
 
     Ok(())
 }

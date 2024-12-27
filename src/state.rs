@@ -163,7 +163,7 @@ pub(crate) trait ReadState {
 }
 
 pub(crate) trait WriteState {
-    type Error;
+    type Error: std::error::Error + 'static;
 
     async fn invite(
         &self,
