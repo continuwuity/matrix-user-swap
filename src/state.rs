@@ -18,7 +18,8 @@ use ruma::{
             },
             server_acl::RoomServerAclEventContent,
         },
-        GlobalAccountDataEventType, RoomAccountDataEventType, StateEventType,
+        EmptyStateKey, GlobalAccountDataEventType, RoomAccountDataEventType,
+        StateEventType,
     },
     OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomId, UserId,
 };
@@ -174,6 +175,12 @@ pub(crate) trait WriteState {
     async fn join(&self, room_id: &RoomId) -> Result<(), Self::Error>;
 
     async fn leave(&self, room_id: &RoomId) -> Result<(), Self::Error>;
+
+    async fn set_power_levels(
+        &self,
+        room_id: &RoomId,
+        power_levels: &RoomPowerLevelsEventContent,
+    ) -> Result<(), Self::Error>;
 }
 
 #[derive(Error, Debug)]
@@ -342,6 +349,13 @@ impl ReadState for ClientStateAccessor {
 pub(crate) enum ClientWriteStateError {
     #[error("client api request failed")]
     Request(#[from] RumaError),
+
+    #[error("serializing {event_type} event failed")]
+    Serialize {
+        event_type: StateEventType,
+        #[source]
+        error: serde_json::Error,
+    },
 }
 
 impl WriteState for ClientStateAccessor {
@@ -376,6 +390,26 @@ impl WriteState for ClientStateAccessor {
         let request = api::client::membership::leave_room::v3::Request::new(
             room_id.to_owned(),
         );
+        self.client.send_request(request).await?;
+        Ok(())
+    }
+
+    async fn set_power_levels(
+        &self,
+        room_id: &RoomId,
+        power_levels: &RoomPowerLevelsEventContent,
+    ) -> Result<(), Self::Error> {
+        use ClientWriteStateError as Error;
+
+        let request = api::client::state::send_state_event::v3::Request::new(
+            room_id.to_owned(),
+            &EmptyStateKey,
+            power_levels,
+        )
+        .map_err(|error| Error::Serialize {
+            event_type: StateEventType::RoomPowerLevels,
+            error,
+        })?;
         self.client.send_request(request).await?;
         Ok(())
     }
