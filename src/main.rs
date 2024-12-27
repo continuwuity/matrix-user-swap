@@ -76,6 +76,11 @@ enum Error {
     #[error("failed to initialize logging")]
     InitLogging(#[from] InitLoggingError),
 
+    #[error(
+        "migration between different homeservers is currently unsupported"
+    )]
+    DifferentServers,
+
     #[error("failed to initialize matrix client for {_0} user")]
     InitClient(UserKind, #[source] RumaError),
 
@@ -277,6 +282,11 @@ async fn try_main() -> Result<(), Error> {
     let settings = PlanSettings {
         leave: cli.leave,
     };
+
+    if cli.old_hs_url != cli.new_hs_url {
+        // TODO: figure out the wait-for-invite problem
+        return Err(Error::DifferentServers);
+    }
 
     let http_client = client::http_client::Reqwest::new();
 
