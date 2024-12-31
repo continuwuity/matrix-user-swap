@@ -18,9 +18,11 @@ use ruma::{
             },
             server_acl::RoomServerAclEventContent,
         },
+        AnyGlobalAccountDataEventContent, AnyRoomAccountDataEventContent,
         EmptyStateKey, GlobalAccountDataEventType, RoomAccountDataEventType,
         StateEventType,
     },
+    serde::Raw,
     OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomId, UserId,
 };
 use serde::{de::DeserializeOwned, Deserialize};
@@ -180,6 +182,19 @@ pub(crate) trait WriteState {
         &self,
         room_id: &RoomId,
         power_levels: &RoomPowerLevelsEventContent,
+    ) -> Result<(), Self::Error>;
+
+    async fn set_global_account_data_event(
+        &self,
+        kind: GlobalAccountDataEventType,
+        content: Raw<AnyGlobalAccountDataEventContent>,
+    ) -> Result<(), Self::Error>;
+
+    async fn set_room_account_data_event(
+        &self,
+        room: &RoomId,
+        kind: RoomAccountDataEventType,
+        content: Raw<AnyRoomAccountDataEventContent>,
     ) -> Result<(), Self::Error>;
 }
 
@@ -410,6 +425,38 @@ impl WriteState for ClientStateAccessor {
             event_type: StateEventType::RoomPowerLevels,
             error,
         })?;
+        self.client.send_request(request).await?;
+        Ok(())
+    }
+
+    async fn set_global_account_data_event(
+        &self,
+        kind: GlobalAccountDataEventType,
+        content: Raw<AnyGlobalAccountDataEventContent>,
+    ) -> Result<(), Self::Error> {
+        let request =
+            api::client::config::set_global_account_data::v3::Request::new_raw(
+                self.user_id.clone(),
+                kind,
+                content,
+            );
+        self.client.send_request(request).await?;
+        Ok(())
+    }
+
+    async fn set_room_account_data_event(
+        &self,
+        room: &RoomId,
+        kind: RoomAccountDataEventType,
+        content: Raw<AnyRoomAccountDataEventContent>,
+    ) -> Result<(), Self::Error> {
+        let request =
+            api::client::config::set_room_account_data::v3::Request::new_raw(
+                self.user_id.clone(),
+                room.to_owned(),
+                kind,
+                content,
+            );
         self.client.send_request(request).await?;
         Ok(())
     }
