@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use impl_tools::autoimpl;
 use ruma::OwnedRoomId;
 use thiserror::Error;
 use tracing as t;
@@ -20,6 +21,17 @@ pub(crate) struct ExecuteError {
     error_count: usize,
 }
 
+#[derive(Error)]
+#[autoimpl(Debug where S: ReadState + WriteState)]
+enum RoomError<S: ReadState + WriteState> {
+    #[error("failed to invite new user to room")]
+    Invite(#[source] <S as WriteState>::Error),
+    #[error("failed to join room room as new user")]
+    Join(#[source] <S as WriteState>::Error),
+    #[error("failed to leave room room as old user")]
+    Leave(#[source] <S as WriteState>::Error),
+}
+
 struct ExecuteContext<'a, S: ReadState + WriteState> {
     plan: &'a Plan<S>,
     old: &'a S,
@@ -37,10 +49,9 @@ impl<S: ReadState + WriteState> ExecuteContext<'_, S> {
     fn error<E: std::error::Error>(
         &mut self,
         room: Option<OwnedRoomId>,
-        message: &str,
         error: E,
     ) {
-        t::error!("{}: {}", message, error.display_with_sources("\n  "));
+        t::error!("{}", error.display_with_sources("\n  "));
         self.error_count += 1;
         if let Some(room) = room {
             self.failed_rooms.insert(room);
@@ -89,35 +100,38 @@ impl<S: ReadState + WriteState> ExecuteContext<'_, S> {
 
     #[t::instrument(skip_all, fields(%room))]
     async fn migrate_room(&mut self, room: &RoomIdentity, plan: &RoomPlan<S>) {
+        if let Err(error) = self.migrate_room_inner(room, plan).await {
+            self.error(Some(room.id.to_owned()), error);
+        }
+    }
+
+    async fn migrate_room_inner(
+        &mut self,
+        room: &RoomIdentity,
+        plan: &RoomPlan<S>,
+    ) -> Result<(), RoomError<S>> {
+        use RoomError as Error;
+
         if plan.invite {
             t::info!("Inviting new user to room");
-            if let Err(error) =
-                self.old.invite(&room.id, &self.plan.new_user_id).await
-            {
-                self.error(
-                    Some(room.id.to_owned()),
-                    "Failed to invite new user to room",
-                    error,
-                );
-                return;
-            }
+            self.old
+                .invite(&room.id, &self.plan.new_user_id)
+                .await
+                .map_err(Error::Invite)?;
         }
 
         if plan.join {
             t::info!("Joining room with new user");
-            if let Err(error) = self.new.join(&room.id).await {
-                self.error(
-                    Some(room.id.to_owned()),
-                    "Failed to join room",
-                    error,
-                );
-                return;
-            }
+            self.new.join(&room.id).await.map_err(Error::Join)?;
         }
+
+        Ok(())
     }
 
     #[t::instrument(skip_all, fields(%room))]
     async fn leave_room(&mut self, room: &RoomIdentity, plan: &RoomPlan<S>) {
+        use RoomError as Error;
+
         if !plan.leave {
             return;
         }
@@ -132,7 +146,7 @@ impl<S: ReadState + WriteState> ExecuteContext<'_, S> {
 
         t::info!("Leaving room with old user");
         if let Err(error) = self.old.leave(&room.id).await {
-            self.error(Some(room.id.to_owned()), "Failed to leave room", error);
+            self.error(Some(room.id.to_owned()), Error::<S>::Leave(error));
         }
     }
 }
