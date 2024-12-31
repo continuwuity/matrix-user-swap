@@ -57,8 +57,10 @@
         "room_account_data": {
             "!room1:example.com": {
                 "m.tag": {
-                    "m.tag1": {
-                        "key": "old_value"
+                    "tags": {
+                        "m.tag1": {
+                            "key": "old_value"
+                        }
                     }
                 }
             }
@@ -69,8 +71,10 @@
         "room_account_data": {
             "!room1:example.com": {
                 "m.tag": {
-                    "m.tag1": {
-                        "key": "new_value"
+                    "tags": {
+                        "m.tag1": {
+                            "key": "new_value"
+                        }
                     }
                 }
             }

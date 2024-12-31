@@ -24,15 +24,17 @@
         "room_account_data": {
             "!room1:example.com": {
                 "m.tag": {
-                    // This can be migrated without problems
-                    "m.favourite": {
-                        "order": 1
-                    },
-                    "u.tag1": {
-                        "key": "value"
-                    },
-                    "u.tag2": {
-                        "key": "value"
+                    "tags": {
+                        // This can be migrated without problems
+                        "m.favourite": {
+                            "order": 1
+                        },
+                        "u.tag1": {
+                            "key": "value"
+                        },
+                        "u.tag2": {
+                            "key": "value"
+                        }
                     }
                 }
             }
@@ -43,13 +45,15 @@
         "room_account_data": {
             "!room1:example.com": {
                 "m.tag": {
-                    // No values, but it's still a conflict
-                    "u.tag1": { },
-                    // The values are the same in the old and new users. We
-                    // shouldn't try to migrate this but shouldn't generate
-                    // an error.
-                    "u.tag2": {
-                        "key": "value"
+                    "tags": {
+                        // No values, but it's still a conflict
+                        "u.tag1": { },
+                        // The values are the same in the old and new users. We
+                        // shouldn't try to migrate this but shouldn't generate
+                        // an error.
+                        "u.tag2": {
+                            "key": "value"
+                        }
                     }
                 }
             }

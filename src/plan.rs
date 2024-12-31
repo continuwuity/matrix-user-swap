@@ -536,9 +536,16 @@ impl<S: ReadState> MakePlanState<'_, S> {
     ) -> Result<Option<Raw<TagEventContent>>, RoomTagsPlanError<S>> {
         use RoomTagsPlanError as Error;
 
+        #[derive(Deserialize, Serialize, Default)]
+        // Error if we encounter anything we don't know how to migrate.
+        #[serde(deny_unknown_fields)]
+        struct Content {
+            tags: JsonMap,
+        }
+
         let old = self
             .old
-            .get_room_account_data_event::<JsonMap>(
+            .get_room_account_data_event::<Content>(
                 room_id,
                 RoomAccountDataEventType::Tag,
             )
@@ -550,7 +557,7 @@ impl<S: ReadState> MakePlanState<'_, S> {
 
         let new = self
             .new
-            .get_room_account_data_event::<JsonMap>(
+            .get_room_account_data_event::<Content>(
                 room_id,
                 RoomAccountDataEventType::Tag,
             )
@@ -558,15 +565,17 @@ impl<S: ReadState> MakePlanState<'_, S> {
             .map_err(|e| Error::GetEvent(UserKind::New, e))?
             .unwrap_or_default();
 
-        let (merged, merge_errors) = merge_json(old, new);
+        let (merged, merge_errors) = merge_json(old.tags, new.tags);
 
         let merge_errors =
             merge_errors.into_iter().map(RoomPlanError::RoomTagMerge);
         errors.extend(merge_errors);
         let merged = merged.map(|merged| {
-            Raw::new(&merged)
-                .expect("serialization should always succeed")
-                .cast()
+            Raw::new(&Content {
+                tags: merged,
+            })
+            .expect("serialization should always succeed")
+            .cast()
         });
 
         Ok(merged)

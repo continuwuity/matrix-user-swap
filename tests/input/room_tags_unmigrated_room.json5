@@ -31,7 +31,9 @@
         "room_account_data": {
             "!room1:example.com": {
                 "m.tag": {
-                    "m.favourite": { }
+                    "tags": {
+                        "m.favourite": { }
+                    }
                 }
             }
         }

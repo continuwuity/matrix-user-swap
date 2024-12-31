@@ -24,8 +24,10 @@
         "room_account_data": {
             "!room1:example.com": {
                 "m.tag": {
-                    "m.favourite": {
-                        "order": 1
+                    "tags": {
+                        "m.favourite": {
+                            "order": 1
+                        }
                     }
                 }
             }
@@ -36,7 +38,9 @@
         "room_account_data": {
             "!room1:example.com": {
                 "m.tag": {
-                    "u.other": { }
+                    "tags": {
+                        "u.other": { }
+                    }
                 }
             }
         }

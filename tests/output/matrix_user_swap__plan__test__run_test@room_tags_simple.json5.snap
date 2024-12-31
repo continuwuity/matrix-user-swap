@@ -9,8 +9,10 @@ input_file: tests/input/room_tags_simple.json5
     "!room1:example.com": {
       "account_data": {
         "m.tag": {
-          "m.favourite": {
-            "order": 1
+          "tags": {
+            "m.favourite": {
+              "order": 1
+            }
           }
         }
       }

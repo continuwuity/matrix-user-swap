@@ -9,10 +9,12 @@ input_file: tests/input/room_tags_merge.json5
     "!room1:example.com": {
       "account_data": {
         "m.tag": {
-          "m.favourite": {
-            "order": 1
-          },
-          "u.other": {}
+          "tags": {
+            "m.favourite": {
+              "order": 1
+            },
+            "u.other": {}
+          }
         }
       }
     }
