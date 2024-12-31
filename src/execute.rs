@@ -1,7 +1,9 @@
 use std::collections::HashSet;
 
 use impl_tools::autoimpl;
-use ruma::OwnedRoomId;
+use ruma::{
+    events::room::power_levels::RoomPowerLevelsEventContent, Int, OwnedRoomId,
+};
 use thiserror::Error;
 use tracing as t;
 use wee_woo::ErrorExt;
@@ -23,6 +25,15 @@ pub(crate) struct ExecuteError {
 
 #[derive(Error)]
 #[autoimpl(Debug where S: ReadState + WriteState)]
+enum PowerLevelError<S: ReadState + WriteState> {
+    #[error("failed to get current power levels state")]
+    Read(#[source] <S as ReadState>::Error),
+    #[error("failed to set new power levels state")]
+    Write(#[source] <S as WriteState>::Error),
+}
+
+#[derive(Error)]
+#[autoimpl(Debug where S: ReadState + WriteState)]
 enum RoomError<S: ReadState + WriteState> {
     #[error("failed to invite new user to room")]
     Invite(#[source] <S as WriteState>::Error),
@@ -30,6 +41,8 @@ enum RoomError<S: ReadState + WriteState> {
     Join(#[source] <S as WriteState>::Error),
     #[error("failed to leave room room as old user")]
     Leave(#[source] <S as WriteState>::Error),
+    #[error("failed copy old user's power level to new user")]
+    PowerLevel(#[from] PowerLevelError<S>),
 }
 
 struct ExecuteContext<'a, S: ReadState + WriteState> {
@@ -45,7 +58,10 @@ struct ExecuteContext<'a, S: ReadState + WriteState> {
     failed_rooms: HashSet<OwnedRoomId>,
 }
 
-impl<S: ReadState + WriteState> ExecuteContext<'_, S> {
+// TODO: the 'static bound should in theory be unnecessary, but it is required
+// because the thiserror::Error derive macro is adding an unnecessary 'static
+// bound on the Error impl. Maybe there's a way around this?
+impl<S: ReadState + WriteState + 'static> ExecuteContext<'_, S> {
     fn error<E: std::error::Error>(
         &mut self,
         room: Option<OwnedRoomId>,
@@ -125,6 +141,33 @@ impl<S: ReadState + WriteState> ExecuteContext<'_, S> {
             self.new.join(&room.id).await.map_err(Error::Join)?;
         }
 
+        if let Some(power_level) = plan.power_level {
+            if let Err(error) = self.set_power_level(room, power_level).await {
+                self.error(Some(room.id.to_owned()), Error::PowerLevel(error));
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn set_power_level(
+        &self,
+        room: &RoomIdentity,
+        power_level: Int,
+    ) -> Result<(), PowerLevelError<S>> {
+        use PowerLevelError as Error;
+
+        t::info!("Copying old user's power level ({power_level}) to new user");
+
+        let power_levels =
+            self.old.get_power_levels(&room.id).await.map_err(Error::Read)?;
+        let mut power_levels = RoomPowerLevelsEventContent::from(power_levels);
+        power_levels.users.insert(self.plan.new_user_id.clone(), power_level);
+        self.old
+            .set_power_levels(&room.id, &power_levels)
+            .await
+            .map_err(Error::Write)?;
+
         Ok(())
     }
 
@@ -151,7 +194,7 @@ impl<S: ReadState + WriteState> ExecuteContext<'_, S> {
     }
 }
 
-pub(crate) async fn execute_plan<S: ReadState + WriteState>(
+pub(crate) async fn execute_plan<S: ReadState + WriteState + 'static>(
     plan: &Plan<S>,
     old: &S,
     new: &S,
