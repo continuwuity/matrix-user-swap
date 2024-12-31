@@ -52,6 +52,13 @@ pub(crate) struct RoomPlan<S: ReadState> {
     pub(crate) join: bool,
     #[serde(default, skip_serializing_if = "is_default")]
     pub(crate) leave: bool,
+    /// Power level to set for the new user in this room.
+    ///
+    /// Only the new user's power level is stored, rather than the full
+    /// `m.room.power_levels` event content, because this event is particularly
+    /// prone to race conditions. Any other user might update it's contents
+    /// in between planning and execution, so it's safest to fetch the most
+    /// recent content right before writing the new content.
     #[serde(skip_serializing_if = "is_default")]
     pub(crate) power_level: Option<Int>,
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
