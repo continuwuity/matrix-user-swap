@@ -2,7 +2,11 @@ use std::collections::HashSet;
 
 use impl_tools::autoimpl;
 use ruma::{
-    events::room::power_levels::RoomPowerLevelsEventContent, Int, OwnedRoomId,
+    events::{
+        room::power_levels::RoomPowerLevelsEventContent,
+        RoomAccountDataEventType,
+    },
+    Int, OwnedRoomId,
 };
 use thiserror::Error;
 use tracing as t;
@@ -43,6 +47,12 @@ enum RoomError<S: ReadState + WriteState> {
     Leave(#[source] <S as WriteState>::Error),
     #[error("failed copy old user's power level to new user")]
     PowerLevel(#[from] PowerLevelError<S>),
+    #[error("failed set {event_type} account data event")]
+    AccountData {
+        event_type: RoomAccountDataEventType,
+        #[source]
+        error: <S as WriteState>::Error,
+    },
 }
 
 struct ExecuteContext<'a, S: ReadState + WriteState> {
@@ -144,6 +154,28 @@ impl<S: ReadState + WriteState + 'static> ExecuteContext<'_, S> {
         if let Some(power_level) = plan.power_level {
             if let Err(error) = self.set_power_level(room, power_level).await {
                 self.error(Some(room.id.to_owned()), Error::PowerLevel(error));
+            }
+        }
+
+        for (kind, content) in &plan.account_data {
+            t::info!("Copying {kind} account data event");
+
+            let result = self
+                .new
+                .set_room_account_data_event(
+                    &room.id,
+                    kind.clone(),
+                    content.clone(),
+                )
+                .await;
+            if let Err(error) = result {
+                self.error(
+                    Some(room.id.to_owned()),
+                    Error::<S>::AccountData {
+                        event_type: kind.clone(),
+                        error,
+                    },
+                );
             }
         }
 
