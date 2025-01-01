@@ -323,11 +323,12 @@ async fn try_main() -> Result<(), Error> {
     print_plan(&plan);
     print_warnings();
 
-    if !cli.dry_run {
-        execute_plan(&plan, &old, &new).await?;
-    } else {
+    if cli.dry_run {
         t::info!("Not executing plan, because --dry-run was specified");
+        return Ok(());
     }
+
+    execute_plan(&plan, &old, &new).await?;
 
     Ok(())
 }
