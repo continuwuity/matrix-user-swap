@@ -50,6 +50,10 @@ struct Cli {
     #[clap(long)]
     new_hs_url: String,
 
+    /// Compute a migration plan, but do not execute it.
+    #[clap(short = 'd', long)]
+    dry_run: bool,
+
     /// Leave rooms that are fully migrated with the old user
     ///
     /// The recommended way to use this option is to run the tool without
@@ -319,7 +323,11 @@ async fn try_main() -> Result<(), Error> {
     print_plan(&plan);
     print_warnings();
 
-    execute_plan(&plan, &old, &new).await?;
+    if !cli.dry_run {
+        execute_plan(&plan, &old, &new).await?;
+    } else {
+        t::info!("Not executing plan, because --dry-run was specified");
+    }
 
     Ok(())
 }
