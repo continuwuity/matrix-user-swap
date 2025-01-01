@@ -2,6 +2,7 @@ use std::{mem, process::ExitCode};
 
 use clap::Parser;
 use derive_more::Display;
+use dialoguer::Confirm;
 use rand::{thread_rng, Rng};
 use ruma::{
     api,
@@ -325,6 +326,19 @@ async fn try_main() -> Result<(), Error> {
 
     if cli.dry_run {
         t::info!("Not executing plan, because --dry-run was specified");
+        return Ok(());
+    }
+
+    println!();
+    // Unwrap because the only error case is IO on stdout/stdin
+    let confirm = Confirm::new()
+        .with_prompt("Continue?")
+        .wait_for_newline(true)
+        .default(false)
+        .interact()
+        .unwrap();
+    if !confirm {
+        t::info!("Cancelled plan execution");
         return Ok(());
     }
 
