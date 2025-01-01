@@ -755,8 +755,8 @@ impl<S: ReadState> MakePlanState<'_, S> {
 
     /// Determine which rooms should be left and mark them.
     ///
-    /// Rooms will only be left if [`Settings::leave`] is set, and if they are
-    /// fully migrated with no errors.
+    /// Rooms will only be left if [`PlanSettings::leave`] is set, and if they
+    /// are fully migrated with no errors.
     async fn plan_leaves(&mut self) {
         if !self.settings.leave {
             return;
