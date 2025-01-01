@@ -173,7 +173,7 @@ impl<S: ReadState + WriteState + 'static> ExecuteContext<'_, S> {
         }
 
         for (kind, content) in &plan.account_data {
-            t::info!("Copying {kind} account data event");
+            t::info!("Migrating {kind} account data event");
 
             let result = self
                 .new
