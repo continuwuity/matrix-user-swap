@@ -4,8 +4,10 @@ use impl_tools::autoimpl;
 use ruma::{
     events::{
         room::power_levels::RoomPowerLevelsEventContent,
+        AnyGlobalAccountDataEventContent, GlobalAccountDataEventType,
         RoomAccountDataEventType,
     },
+    serde::Raw,
     Int, OwnedRoomId,
 };
 use thiserror::Error;
@@ -55,6 +57,15 @@ enum RoomError<S: ReadState + WriteState> {
     },
 }
 
+#[derive(Error)]
+#[autoimpl(Debug where S: WriteState)]
+#[error("failed to set {event_type} global account data event")]
+struct GlobalAccountDataError<S: WriteState> {
+    event_type: GlobalAccountDataEventType,
+    #[source]
+    error: S::Error,
+}
+
 struct ExecuteContext<'a, S: ReadState + WriteState> {
     plan: &'a Plan<S>,
     old: &'a S,
@@ -94,6 +105,10 @@ impl<S: ReadState + WriteState + 'static> ExecuteContext<'_, S> {
                 alias: room.alias.clone(),
             };
             self.migrate_room(&identity, room).await;
+        }
+
+        for (kind, content) in &self.plan.global_account_data {
+            self.migrate_global_account_data(kind, content.clone()).await;
         }
 
         let any_leaves = self.plan.rooms.values().any(|room| room.leave);
@@ -201,6 +216,33 @@ impl<S: ReadState + WriteState + 'static> ExecuteContext<'_, S> {
             .map_err(Error::Write)?;
 
         Ok(())
+    }
+
+    #[t::instrument(skip_all, fields(%event_type))]
+    async fn migrate_global_account_data(
+        &mut self,
+        event_type: &GlobalAccountDataEventType,
+        content: Raw<AnyGlobalAccountDataEventContent>,
+    ) {
+        use GlobalAccountDataError as Error;
+
+        t::info!("Migrating global account data event");
+
+        // TODO: if some rooms failed, we probably shouldn't put then in
+        // m.direct. This kinda breaks the plan/executor abstraction though :(
+        let result = self
+            .new
+            .set_global_account_data_event(event_type.clone(), content)
+            .await;
+        if let Err(error) = result {
+            self.error(
+                None,
+                Error::<S> {
+                    event_type: event_type.clone(),
+                    error,
+                },
+            );
+        }
     }
 
     #[t::instrument(skip_all, fields(%room))]
