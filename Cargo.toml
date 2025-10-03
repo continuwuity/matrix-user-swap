@@ -78,7 +78,7 @@ wildcard_dependencies = "warn"
 [dependencies]
 clap = { version = "4.5.21", features = ["derive", "wrap_help"] }
 derive_more = { version = "1.0.0", features = ["display"] }
-dialoguer = { version = "0.11.0", default-features = false }
+dialoguer = { version = "0.11.0", default-features = false, features = ["password"] }
 impl-tools = "0.10.3"
 rand = "0.8.5"
 ruma = { version = "0.11.1", default-features = false, features = [ "client", "client-api-c", "client-ext-client-api", "client-reqwest-rustls-native-roots", "rand" ] }

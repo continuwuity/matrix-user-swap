@@ -228,14 +228,19 @@ pub(crate) struct ClientStateAccessor {
 impl ClientStateAccessor {
     pub(crate) async fn new(
         client: Client,
-    ) -> Result<ClientStateAccessor, ClientReadStateError> {
+    ) -> Result<ClientStateAccessor, (ClientReadStateError, Client)> {
         let request = api::client::account::whoami::v3::Request::new();
-        let response = client.send_request(request).await?;
+        match client.send_request(request).await {
+            Ok(response) => Ok(ClientStateAccessor {
+                client,
+                user_id: response.user_id,
+            }),
+            Err(error) => Err((error.into(), client)),
+        }
+    }
 
-        Ok(ClientStateAccessor {
-            client,
-            user_id: response.user_id,
-        })
+    pub(crate) fn into_inner(self) -> Client {
+        self.client
     }
 }
 

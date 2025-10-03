@@ -1,6 +1,6 @@
-use std::{mem, process::ExitCode};
+use std::{borrow::Cow, mem, process::ExitCode};
 
-use clap::Parser;
+use clap::{Args, Parser};
 use derive_more::Display;
 use dialoguer::Confirm;
 use rand::{thread_rng, Rng};
@@ -37,17 +37,39 @@ pub(crate) enum UserKind {
     New,
 }
 
+// <https://github.com/clap-rs/clap/issues/2621> would make this much nicer :(
+#[derive(Args)]
+#[group(required = true, multiple = false)]
+struct OldAuth {
+    #[clap(id = "old-access-token", long)]
+    access_token: Option<String>,
+    #[clap(id = "old-user", long)]
+    user: Option<String>,
+}
+
+#[derive(Args)]
+#[group(required = true, multiple = false)]
+struct NewAuth {
+    #[clap(id = "new-access-token", long)]
+    access_token: Option<String>,
+    #[clap(id = "new-user", long)]
+    user: Option<String>,
+}
+
 // TODO: support server discovery from userid
-// TODO: support password auth
 #[derive(Parser)]
 struct Cli {
-    #[clap(long)]
-    old_access_token: String,
+    #[clap(flatten)]
+    old_auth: OldAuth,
+    #[clap(long, requires = "old-user")]
+    old_password: Option<String>,
     #[clap(long)]
     old_hs_url: String,
 
-    #[clap(long)]
-    new_access_token: String,
+    #[clap(flatten)]
+    new_auth: NewAuth,
+    #[clap(long, requires = "new-user")]
+    new_password: Option<String>,
     #[clap(long)]
     new_hs_url: String,
 
@@ -88,6 +110,19 @@ enum Error {
 
     #[error("failed to initialize matrix client for {_0} user")]
     InitClient(UserKind, #[source] RumaError),
+
+    #[error("failed to log in to {_0} user")]
+    LogIn(UserKind, #[source] RumaError),
+
+    // No extra details because we log logout failures with tracing.
+    //
+    // This is because a logout may fail in the middle of processing another
+    // error, and we don't have a mechanism to collect both errors together to
+    // be presented in `main`.
+    //
+    // TODO: switch to derail and not have this problem?
+    #[error("failed to log out one or both users")]
+    LogOut,
 
     #[error("failed to initialize state accessor for {_0} user")]
     InitClientState(UserKind, #[source] ClientReadStateError),
@@ -280,52 +315,75 @@ fn print_warnings() {
     );
 }
 
+async fn try_log_out(kind: UserKind, client: &Client) -> Result<(), RumaError> {
+    let request = api::client::session::logout::v3::Request::new();
+    client.send_request(request).await.inspect_err(|error| {
+        t::error!(?error, "Failed to log out session for {kind} user");
+    })?;
+    Ok(())
+}
+
+/// Along with the client, returns whether or not we created a new session so
+/// that the caller can determine whether it needs to log out on cleanup.
 async fn init_client(
     kind: UserKind,
     http_client: client::http_client::Reqwest,
     hs_url: String,
-    access_token: String,
-) -> Result<ClientStateAccessor, Error> {
+    access_token: Option<String>,
+    user_id: Option<&str>,
+    password: Option<&str>,
+) -> Result<(ClientStateAccessor, bool), Error> {
+    let new_session = access_token.is_none();
+
     let client = client::Client::builder()
-        .access_token(Some(access_token))
+        .access_token(access_token)
         .homeserver_url(hs_url)
         .http_client(http_client)
         .await
         .map_err(|e| Error::InitClient(kind, e))?;
-    ClientStateAccessor::new(client)
-        .await
-        .map_err(|e| Error::InitClientState(kind, e))
+
+    if new_session {
+        let user_id =
+            user_id.expect("clap should require exactly one of the auth args");
+        let password = match password {
+            Some(password) => Cow::Borrowed(password),
+            // Unwrap because the only error case is IO on stdout/stdin
+            None => Cow::Owned(
+                dialoguer::Password::new()
+                    .with_prompt(format!("Password for {user_id}"))
+                    .interact()
+                    .unwrap(),
+            ),
+        };
+
+        client
+            .log_in(user_id, &password, None, Some("matrix-user-swap"))
+            .await
+            .map_err(|e| Error::LogIn(kind, e))?;
+    }
+
+    match ClientStateAccessor::new(client).await {
+        Ok(client_state) => Ok((client_state, new_session)),
+        Err((error, client)) => {
+            if new_session {
+                // Discarding error since it will be logged and we already have
+                // a different error to return
+                let _ = try_log_out(kind, &client).await;
+            }
+            Err(Error::InitClientState(kind, error))
+        }
+    }
 }
 
-async fn try_main() -> Result<(), Error> {
-    init_logging()?;
-    let cli = Cli::parse();
-
+async fn plan_and_execute(
+    cli: Cli,
+    old: &ClientStateAccessor,
+    new: &ClientStateAccessor,
+) -> Result<(), Error> {
     let settings = PlanSettings {
         leave: cli.leave,
     };
-
-    if cli.old_hs_url != cli.new_hs_url {
-        // TODO: figure out the wait-for-invite problem
-        return Err(Error::DifferentServers);
-    }
-
-    let http_client = client::http_client::Reqwest::new();
-
-    let old = init_client(
-        UserKind::Old,
-        http_client.clone(),
-        cli.old_hs_url,
-        cli.old_access_token,
-    ).await?;
-    let new = init_client(
-        UserKind::New,
-        http_client.clone(),
-        cli.new_hs_url,
-        cli.new_access_token,
-    ).await?;
-
-    let mut plan = make_plan(settings, &old, &new).await?;
+    let mut plan = make_plan(settings, old, new).await?;
 
     if cli.anonymize {
         anonymize_plan(&mut plan);
@@ -352,9 +410,69 @@ async fn try_main() -> Result<(), Error> {
         return Ok(());
     }
 
-    execute_plan(&plan, &old, &new).await?;
+    execute_plan(&plan, old, new).await?;
 
     Ok(())
+}
+
+async fn try_main() -> Result<(), Error> {
+    init_logging()?;
+    let cli = Cli::parse();
+
+    if cli.old_hs_url != cli.new_hs_url {
+        // TODO: figure out the wait-for-invite problem
+        return Err(Error::DifferentServers);
+    }
+
+    let http_client = client::http_client::Reqwest::new();
+
+    let (old, old_new_session) = init_client(
+        UserKind::Old,
+        http_client.clone(),
+        cli.old_hs_url.clone(),
+        cli.old_auth.access_token.clone(),
+        cli.old_auth.user.as_deref(),
+        cli.old_password.as_deref(),
+    )
+    .await?;
+    let new_result = init_client(
+        UserKind::New,
+        http_client.clone(),
+        cli.new_hs_url.clone(),
+        cli.new_auth.access_token.clone(),
+        cli.new_auth.user.as_deref(),
+        cli.new_password.as_deref(),
+    )
+    .await;
+    let (new, new_new_session) = match new_result {
+        Ok(ok) => ok,
+        Err(error) => {
+            if old_new_session {
+                let _ = try_log_out(UserKind::Old, &old.into_inner()).await;
+            }
+            return Err(error);
+        }
+    };
+
+    let result = plan_and_execute(cli, &old, &new).await;
+
+    let mut log_out_error = false;
+    if old_new_session {
+        log_out_error |=
+            try_log_out(UserKind::Old, &old.into_inner()).await.is_err();
+    }
+    if new_new_session {
+        log_out_error |=
+            try_log_out(UserKind::New, &new.into_inner()).await.is_err();
+    }
+
+    if log_out_error && result.is_ok() {
+        // Log out errors will already have been logged, but we want to return
+        // an error in order to set the right exit status
+        Err(Error::LogOut)
+    } else {
+        result
+    }
 }
 
 #[tokio::main]
