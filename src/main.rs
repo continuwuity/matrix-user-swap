@@ -280,6 +280,23 @@ fn print_warnings() {
     );
 }
 
+async fn init_client(
+    kind: UserKind,
+    http_client: client::http_client::Reqwest,
+    hs_url: String,
+    access_token: String,
+) -> Result<ClientStateAccessor, Error> {
+    let client = client::Client::builder()
+        .access_token(Some(access_token))
+        .homeserver_url(hs_url)
+        .http_client(http_client)
+        .await
+        .map_err(|e| Error::InitClient(kind, e))?;
+    ClientStateAccessor::new(client)
+        .await
+        .map_err(|e| Error::InitClientState(kind, e))
+}
+
 async fn try_main() -> Result<(), Error> {
     init_logging()?;
     let cli = Cli::parse();
@@ -295,25 +312,18 @@ async fn try_main() -> Result<(), Error> {
 
     let http_client = client::http_client::Reqwest::new();
 
-    let old_client = client::Client::builder()
-        .access_token(Some(cli.old_access_token))
-        .homeserver_url(cli.old_hs_url)
-        .http_client(http_client.clone())
-        .await
-        .map_err(|e| Error::InitClient(UserKind::Old, e))?;
-    let new_client = client::Client::builder()
-        .access_token(Some(cli.new_access_token))
-        .homeserver_url(cli.new_hs_url)
-        .http_client(http_client.clone())
-        .await
-        .map_err(|e| Error::InitClient(UserKind::New, e))?;
-
-    let old = ClientStateAccessor::new(old_client)
-        .await
-        .map_err(|e| Error::InitClientState(UserKind::Old, e))?;
-    let new = ClientStateAccessor::new(new_client)
-        .await
-        .map_err(|e| Error::InitClientState(UserKind::New, e))?;
+    let old = init_client(
+        UserKind::Old,
+        http_client.clone(),
+        cli.old_hs_url,
+        cli.old_access_token,
+    ).await?;
+    let new = init_client(
+        UserKind::New,
+        http_client.clone(),
+        cli.new_hs_url,
+        cli.new_access_token,
+    ).await?;
 
     let mut plan = make_plan(settings, &old, &new).await?;
 
