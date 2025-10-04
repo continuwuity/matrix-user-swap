@@ -1,10 +1,11 @@
 ---
 source: src/plan.rs
-expression: plan
+expression: plan_json
 input_file: tests/input/acl_allowed.json5
 ---
 {
   "new_user_id": "@user:new.com",
+  "old_user_id": "@user:old.com",
   "rooms": {
     "!allow-all:example.com": {
       "join": true

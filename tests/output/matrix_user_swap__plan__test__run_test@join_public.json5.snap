@@ -1,10 +1,11 @@
 ---
 source: src/plan.rs
-expression: plan
+expression: plan_json
 input_file: tests/input/join_public.json5
 ---
 {
   "new_user_id": "@new:example.com",
+  "old_user_id": "@old:example.com",
   "rooms": {
     "!room1:example.com": {
       "join": true

@@ -5,6 +5,7 @@ input_file: tests/input/banned.json5
 ---
 {
   "new_user_id": "@new:example.com",
+  "old_user_id": "@old:example.com",
   "rooms": {
     "!mod-room:example.com": {
       "errors": [

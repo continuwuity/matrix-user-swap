@@ -20,6 +20,7 @@ input_file: tests/input/direct_messages_merge.json5
     }
   },
   "new_user_id": "@new:example.com",
+  "old_user_id": "@old:example.com",
   "rooms": {
     "!dm-2-with-user-a:example.com": {
       "invite": true,

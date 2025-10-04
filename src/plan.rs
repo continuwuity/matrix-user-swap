@@ -73,6 +73,7 @@ pub(crate) struct RoomPlan<S: ReadState> {
 
 #[derive(Serialize)]
 pub(crate) struct Plan<S: ReadState> {
+    pub(crate) old_user_id: OwnedUserId,
     pub(crate) new_user_id: OwnedUserId,
     #[serde(bound(serialize = "RoomPlan<S>: Serialize"))]
     pub(crate) rooms: BTreeMap<OwnedRoomId, RoomPlan<S>>,
@@ -842,12 +843,13 @@ pub(crate) async fn make_plan<S: ReadState>(
         settings,
         old,
         new,
-        old_user_id,
+        old_user_id: old_user_id.clone(),
         new_user_id: new_user_id.clone(),
         old_joined_rooms,
         new_joined_rooms,
 
         plan: Plan {
+            old_user_id,
             new_user_id,
             rooms: BTreeMap::new(),
             global_account_data: BTreeMap::new(),

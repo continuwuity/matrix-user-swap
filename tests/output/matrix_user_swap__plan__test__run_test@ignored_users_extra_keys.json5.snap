@@ -31,5 +31,6 @@ input_file: tests/input/ignored_users_extra_keys.json5
     }
   },
   "new_user_id": "@new:example.com",
+  "old_user_id": "@old:example.com",
   "rooms": {}
 }

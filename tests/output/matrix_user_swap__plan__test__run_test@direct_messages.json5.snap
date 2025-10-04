@@ -15,6 +15,7 @@ input_file: tests/input/direct_messages.json5
     }
   },
   "new_user_id": "@new:example.com",
+  "old_user_id": "@old:example.com",
   "rooms": {
     "!dm-with-user-b:example.com": {
       "join": true

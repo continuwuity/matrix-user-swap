@@ -5,6 +5,7 @@ input_file: tests/input/history_visibility.json5
 ---
 {
   "new_user_id": "@new:example.com",
+  "old_user_id": "@old:example.com",
   "rooms": {
     "!already-joined:example.com": {
       "errors": [

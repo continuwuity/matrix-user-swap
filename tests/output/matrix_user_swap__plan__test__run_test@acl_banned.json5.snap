@@ -5,6 +5,7 @@ input_file: tests/input/acl_banned.json5
 ---
 {
   "new_user_id": "@user:new.com",
+  "old_user_id": "@user:old.com",
   "rooms": {
     "!allow:example.com": {
       "errors": [

@@ -5,6 +5,7 @@ input_file: tests/input/room_tags_cannot_merge.json5
 ---
 {
   "new_user_id": "@new:example.com",
+  "old_user_id": "@old:example.com",
   "rooms": {
     "!room1:example.com": {
       "account_data": {
