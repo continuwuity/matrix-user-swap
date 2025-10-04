@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, time::Duration};
 
 use impl_tools::autoimpl;
 use indicatif::ProgressStyle;
@@ -46,6 +46,8 @@ enum PowerLevelError<S: ReadState + WriteState> {
 enum RoomError<S: ReadState + WriteState> {
     #[error("failed to invite new user to room")]
     Invite(#[source] <S as WriteState>::Error),
+    #[error("failed waiting for new user to receive invite to room")]
+    WaitInvite(#[source] <S as ReadState>::Error),
     #[error("failed to join room room as new user")]
     Join(#[source] <S as WriteState>::Error),
     #[error("failed to leave room room as old user")]
@@ -179,6 +181,13 @@ impl<S: ReadState + WriteState + 'static> ExecuteContext<'_, S> {
                 .invite(&room.id, &self.plan.new_user_id)
                 .await
                 .map_err(Error::Invite)?;
+            self.new
+                .wait_for_invite(&room.id)
+                .await
+                .map_err(Error::WaitInvite)?;
+            // Synapse seems to have some issues with joins immediately after
+            // receiving the invite over sync, so wait a little bit longer :(
+            tokio::time::sleep(Duration::from_millis(200)).await;
         }
 
         if plan.join {

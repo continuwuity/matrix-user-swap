@@ -21,6 +21,7 @@ mod execute;
 mod plan;
 mod rate_limit;
 mod state;
+mod sync;
 mod utils;
 
 use crate::{
@@ -104,9 +105,6 @@ pub(crate) type RumaError = client::Error<ReqwestError, api::client::Error>;
 enum Error {
     #[error("failed to initialize logging")]
     InitLogging(#[from] InitLoggingError),
-
-    #[error("migration between different homeservers is currently unsupported")]
-    DifferentServers,
 
     #[error("failed to initialize matrix client for {_0} user")]
     InitClient(UserKind, #[source] RumaError),
@@ -426,11 +424,6 @@ async fn plan_and_execute(
 async fn try_main() -> Result<(), Error> {
     init_logging()?;
     let cli = Cli::parse();
-
-    if cli.old_hs_url != cli.new_hs_url {
-        // TODO: figure out the wait-for-invite problem
-        return Err(Error::DifferentServers);
-    }
 
     let http_client = client::http_client::Reqwest::new();
 

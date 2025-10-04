@@ -1,3 +1,5 @@
+use std::sync::OnceLock;
+
 use ruma::{
     OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomId, UserId,
     api::{
@@ -28,7 +30,7 @@ use ruma::{
 use serde::{Deserialize, de::DeserializeOwned};
 use thiserror::Error;
 
-use crate::{RumaError, rate_limit::RateLimitedClient};
+use crate::{RumaError, rate_limit::RateLimitedClient, sync::SyncLoop};
 
 #[cfg(test)]
 pub(crate) mod mock;
@@ -163,6 +165,11 @@ pub(crate) trait ReadState {
             .await?;
         Ok(extract.and_then(|extract| extract.history_visibility))
     }
+
+    async fn wait_for_invite(
+        &self,
+        room_id: &RoomId,
+    ) -> Result<(), Self::Error>;
 }
 
 pub(crate) trait WriteState {
@@ -223,6 +230,7 @@ pub(crate) enum ClientReadStateError {
 pub(crate) struct ClientStateAccessor {
     client: RateLimitedClient,
     user_id: OwnedUserId,
+    sync_loop: OnceLock<SyncLoop>,
 }
 
 impl ClientStateAccessor {
@@ -234,6 +242,7 @@ impl ClientStateAccessor {
         Ok(ClientStateAccessor {
             client,
             user_id: response.user_id,
+            sync_loop: OnceLock::new(),
         })
     }
 
@@ -360,6 +369,16 @@ impl ReadState for ClientStateAccessor {
             .deserialize_as::<T>()
             .map_err(|e| Error::RoomAccountDataEventDeserialize(kind, e))?;
         Ok(Some(content))
+    }
+
+    async fn wait_for_invite(
+        &self,
+        room_id: &RoomId,
+    ) -> Result<(), Self::Error> {
+        let sync_loop =
+            self.sync_loop.get_or_init(|| SyncLoop::new(self.client.clone()));
+        sync_loop.wait_for_invite(room_id.to_owned()).await;
+        Ok(())
     }
 }
 
