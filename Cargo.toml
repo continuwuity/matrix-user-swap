@@ -86,7 +86,7 @@ ruma = { version = "0.11.1", default-features = false, features = [ "client", "c
 serde = { version = "1.0.215", features = ["derive"] }
 serde_json = "1.0.133"
 thiserror = "2.0.3"
-tokio = { version = "1.41.1", features = ["full"] }
+tokio = { version = "1.47.1", features = ["full"] }
 tracing = "0.1.40"
 tracing-indicatif = "0.3.13"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
