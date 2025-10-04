@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
 use impl_tools::autoimpl;
+use indicatif::ProgressStyle;
 use ruma::{
     Int, OwnedRoomId,
     events::{
@@ -12,6 +13,8 @@ use ruma::{
 };
 use thiserror::Error;
 use tracing as t;
+use tracing::Span;
+use tracing_indicatif::span_ext::IndicatifSpanExt;
 use wee_woo::ErrorExt;
 
 use crate::{
@@ -99,20 +102,30 @@ impl<S: ReadState + WriteState + 'static> ExecuteContext<'_, S> {
 
     async fn execute(&mut self) -> Result<(), ExecuteError> {
         let plan = self.plan;
+
+        let span = Span::current();
+        span.pb_reset();
+        span.pb_set_length(u64::try_from(plan.rooms.len()).unwrap());
+        span.pb_set_message("Migrating rooms");
+
         for (room_id, room) in &plan.rooms {
             let identity = RoomIdentity {
                 id: room_id.clone(),
                 alias: room.alias.clone(),
             };
             self.migrate_room(&identity, room).await;
+            span.pb_inc(1);
         }
+
+        span.pb_set_message("Migrating global data");
 
         for (kind, content) in &self.plan.global_account_data {
             self.migrate_global_account_data(kind, content.clone()).await;
         }
 
-        let any_leaves = self.plan.rooms.values().any(|room| room.leave);
-        if any_leaves {
+        let leave_count =
+            self.plan.rooms.values().filter(|room| room.leave).count();
+        if leave_count > 0 {
             if self.global_errors {
                 t::warn!(
                     "Not leaving any rooms because there were global \
@@ -120,12 +133,19 @@ impl<S: ReadState + WriteState + 'static> ExecuteContext<'_, S> {
                 );
             } else {
                 t::info!("Leaving fully-migrated rooms");
+                span.pb_reset();
+                span.pb_set_length(u64::try_from(plan.rooms.len()).unwrap());
+                span.pb_set_message("Leaving rooms");
+
                 for (room_id, room) in &plan.rooms {
                     let identity = RoomIdentity {
                         id: room_id.clone(),
                         alias: room.alias.clone(),
                     };
                     self.leave_room(&identity, room).await;
+                    if room.leave {
+                        span.pb_inc(1);
+                    }
                 }
             }
         }
@@ -268,11 +288,17 @@ impl<S: ReadState + WriteState + 'static> ExecuteContext<'_, S> {
     }
 }
 
+#[t::instrument(skip_all)]
 pub(crate) async fn execute_plan<S: ReadState + WriteState + 'static>(
     plan: &Plan<S>,
     old: &S,
     new: &S,
 ) -> Result<(), ExecuteError> {
+    let span = Span::current();
+    span.pb_set_style(
+        &ProgressStyle::with_template("{wide_bar} {pos}/{len} {msg}").unwrap(),
+    );
+
     let mut ctx = ExecuteContext {
         plan,
         old,

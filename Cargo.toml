@@ -80,6 +80,7 @@ clap = { version = "4.5.21", features = ["derive", "wrap_help"] }
 derive_more = { version = "1.0.0", features = ["display"] }
 dialoguer = { version = "0.11.0", default-features = false, features = ["password"] }
 impl-tools = "0.10.3"
+indicatif = "0.18.0"
 rand = "0.8.5"
 ruma = { version = "0.11.1", default-features = false, features = [ "client", "client-api-c", "client-ext-client-api", "client-reqwest-rustls-native-roots", "rand" ] }
 serde = { version = "1.0.215", features = ["derive"] }
@@ -87,6 +88,7 @@ serde_json = "1.0.133"
 thiserror = "2.0.3"
 tokio = { version = "1.41.1", features = ["full"] }
 tracing = "0.1.40"
+tracing-indicatif = "0.3.13"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 wee-woo = "0.1.0"
 

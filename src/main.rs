@@ -13,7 +13,7 @@ use ruma::{
 use serde::Serialize;
 use thiserror::Error;
 use tracing as t;
-use tracing::level_filters::LevelFilter;
+use tracing_indicatif::IndicatifLayer;
 use tracing_subscriber::{self, prelude::*};
 use wee_woo::ErrorExt;
 
@@ -143,12 +143,16 @@ enum InitLoggingError {
 }
 
 fn init_logging() -> Result<(), InitLoggingError> {
+    let indicatif_layer = IndicatifLayer::new();
     let env_filter = tracing_subscriber::EnvFilter::builder()
-        .with_default_directive(LevelFilter::INFO.into())
+        .with_default_directive("matrix_user_swap=info".parse().unwrap())
         .with_env_var("MATRIX_USER_SWAP_LOG")
         .from_env()?;
+    let fmt_layer = tracing_subscriber::fmt::layer()
+        .with_writer(indicatif_layer.get_stderr_writer());
     tracing_subscriber::registry()
-        .with(tracing_subscriber::fmt::layer())
+        .with(fmt_layer)
+        .with(indicatif_layer)
         .with(env_filter)
         .init();
     Ok(())

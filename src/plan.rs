@@ -3,6 +3,7 @@ use std::{
     collections::{BTreeMap, HashSet},
 };
 
+use indicatif::ProgressStyle;
 use ruma::{
     Int, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomId,
     events::{
@@ -21,6 +22,8 @@ use ruma::{
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing as t;
+use tracing::Span;
+use tracing_indicatif::span_ext::IndicatifSpanExt;
 
 use crate::{
     UserKind,
@@ -354,12 +357,19 @@ impl<S: ReadState> MakePlanState<'_, S> {
     }
 
     async fn plan(&mut self) {
+        let span = Span::current();
+        span.pb_reset();
+        span.pb_set_length(u64::try_from(self.old_joined_rooms.len()).unwrap());
+        span.pb_set_message("Evaluating rooms");
+
         for room_id in &self.old_joined_rooms {
             if let Some(room) = self.plan_room(room_id).await {
                 self.plan.rooms.insert(room_id.clone(), room);
             }
+            span.pb_inc(1);
         }
 
+        span.pb_set_message("Evaluating global data");
         self.plan_account_data_direct().await;
         self.plan_account_data_ignored_users().await;
 
@@ -787,6 +797,7 @@ impl<S: ReadState> MakePlanState<'_, S> {
     }
 }
 
+#[t::instrument(skip_all)]
 pub(crate) async fn make_plan<S: ReadState>(
     settings: PlanSettings,
     old: &S,
@@ -821,6 +832,11 @@ pub(crate) async fn make_plan<S: ReadState>(
     let new_joined_rooms = new_joined_rooms.into_iter().collect::<HashSet<_>>();
 
     t::info!("need to evaluate {} rooms", old_joined_rooms.len());
+
+    let span = Span::current();
+    span.pb_set_style(
+        &ProgressStyle::with_template("{wide_bar} {pos}/{len} {msg}").unwrap(),
+    );
 
     let mut state = MakePlanState {
         settings,
