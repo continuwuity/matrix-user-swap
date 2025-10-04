@@ -35,7 +35,7 @@ struct LimitState {
     next_request: AsyncMutex<Option<Instant>>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct RateLimitedClient {
     inner: Client,
     /// Independent rate limiting state for each endpoint
@@ -46,7 +46,7 @@ pub(crate) struct RateLimitedClient {
     /// but still able to send requests on others.
     ///
     /// Endpoints are distinguished by their ruma request type.
-    state: RwLock<HashMap<TypeId, Arc<LimitState>>>,
+    state: Arc<RwLock<HashMap<TypeId, Arc<LimitState>>>>,
 }
 
 impl RateLimitedClient {

@@ -370,9 +370,9 @@ async fn init_client(
     }
 
     let client = RateLimitedClient::new(client);
-    match ClientStateAccessor::new(client).await {
+    match ClientStateAccessor::new(client.clone()).await {
         Ok(client_state) => Ok((client_state, new_session)),
-        Err((error, client)) => {
+        Err(error) => {
             if new_session {
                 // Discarding error since it will be logged and we already have
                 // a different error to return
@@ -456,7 +456,7 @@ async fn try_main() -> Result<(), Error> {
         Ok(ok) => ok,
         Err(error) => {
             if old_new_session {
-                let _ = try_log_out(UserKind::Old, &old.into_inner()).await;
+                let _ = try_log_out(UserKind::Old, old.inner()).await;
             }
             return Err(error);
         }
@@ -466,12 +466,10 @@ async fn try_main() -> Result<(), Error> {
 
     let mut log_out_error = false;
     if old_new_session {
-        log_out_error |=
-            try_log_out(UserKind::Old, &old.into_inner()).await.is_err();
+        log_out_error |= try_log_out(UserKind::Old, old.inner()).await.is_err();
     }
     if new_new_session {
-        log_out_error |=
-            try_log_out(UserKind::New, &new.into_inner()).await.is_err();
+        log_out_error |= try_log_out(UserKind::New, new.inner()).await.is_err();
     }
 
     if log_out_error && result.is_ok() {
