@@ -1,7 +1,7 @@
 use std::sync::OnceLock;
 
 use ruma::{
-    OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomId, UserId,
+    OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomId, ServerName, UserId,
     api::{
         self,
         client::{
@@ -181,7 +181,11 @@ pub(crate) trait WriteState {
         user_id: &UserId,
     ) -> Result<(), Self::Error>;
 
-    async fn join(&self, room_id: &RoomId) -> Result<(), Self::Error>;
+    async fn join(
+        &self,
+        room_id: &RoomId,
+        via: Option<&ServerName>,
+    ) -> Result<(), Self::Error>;
 
     async fn leave(&self, room_id: &RoomId) -> Result<(), Self::Error>;
 
@@ -414,11 +418,16 @@ impl WriteState for ClientStateAccessor {
         Ok(())
     }
 
-    async fn join(&self, room_id: &RoomId) -> Result<(), Self::Error> {
-        let request =
-            api::client::membership::join_room_by_id::v3::Request::new(
-                room_id.to_owned(),
+    async fn join(
+        &self,
+        room_id: &RoomId,
+        via: Option<&ServerName>,
+    ) -> Result<(), Self::Error> {
+        let mut request =
+            api::client::membership::join_room_by_id_or_alias::v3::Request::new(
+                room_id.to_owned().into(),
             );
+        request.via = via.into_iter().map(|server| server.to_owned()).collect();
         self.client.send_request(request).await?;
         Ok(())
     }

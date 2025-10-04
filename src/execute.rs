@@ -192,7 +192,11 @@ impl<S: ReadState + WriteState + 'static> ExecuteContext<'_, S> {
 
         if plan.join {
             t::info!("Joining room with new user");
-            self.new.join(&room.id).await.map_err(Error::Join)?;
+            let old_server = self.plan.old_user_id.server_name();
+            self.new
+                .join(&room.id, Some(old_server))
+                .await
+                .map_err(Error::Join)?;
         }
 
         if let Some(power_level) = plan.power_level
