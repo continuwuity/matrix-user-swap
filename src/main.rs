@@ -3,12 +3,12 @@ use std::{borrow::Cow, mem, process::ExitCode};
 use clap::{Args, Parser};
 use derive_more::Display;
 use dialoguer::Confirm;
-use rand::{thread_rng, Rng};
+use rand::{Rng, thread_rng};
 use ruma::{
-    api,
+    OwnedRoomAliasId, OwnedRoomId, RoomAliasId, RoomId, api,
     client::{self, HttpClient},
     events::RoomAccountDataEventType,
-    server_name, OwnedRoomAliasId, OwnedRoomId, RoomAliasId, RoomId,
+    server_name,
 };
 use serde::Serialize;
 use thiserror::Error;
@@ -23,8 +23,8 @@ mod state;
 mod utils;
 
 use crate::{
-    execute::{execute_plan, ExecuteError},
-    plan::{make_plan, FatalPlanError, Plan, PlanSettings},
+    execute::{ExecuteError, execute_plan},
+    plan::{FatalPlanError, Plan, PlanSettings, make_plan},
     state::{ClientReadStateError, ClientStateAccessor},
     utils::RoomIdentity,
 };
@@ -103,9 +103,7 @@ enum Error {
     #[error("failed to initialize logging")]
     InitLogging(#[from] InitLoggingError),
 
-    #[error(
-        "migration between different homeservers is currently unsupported"
-    )]
+    #[error("migration between different homeservers is currently unsupported")]
     DifferentServers,
 
     #[error("failed to initialize matrix client for {_0} user")]

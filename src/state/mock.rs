@@ -1,16 +1,16 @@
 use std::collections::HashMap;
 
 use ruma::{
-    events::{
-        room::member::MembershipState, GlobalAccountDataEventType,
-        RoomAccountDataEventType, StateEventType,
-    },
     OwnedRoomId, OwnedUserId, RoomId,
+    events::{
+        GlobalAccountDataEventType, RoomAccountDataEventType, StateEventType,
+        room::member::MembershipState,
+    },
 };
-use serde::{de::DeserializeOwned, Deserialize};
+use serde::{Deserialize, de::DeserializeOwned};
 use thiserror::Error;
 
-use crate::{state::ReadState, UserKind};
+use crate::{UserKind, state::ReadState};
 
 #[derive(Debug, Deserialize)]
 struct StateEvent {

@@ -10,10 +10,10 @@
       "pre_releases": false,
       "version_upper_bound": null,
       "release_prefix": null,
-      "version": "v0.19.3",
-      "revision": "de4b20b7b4919e01b84d394bdc6313ea0b3923d9",
-      "url": "https://api.github.com/repos/ipetkov/crane/tarball/v0.19.3",
-      "hash": "0vy6ws4iy8hg10n1yz56aj31wwbw69k34m7fkq96qvdc2lc65f6g"
+      "version": "v0.21.1",
+      "revision": "79c9f2a46fdc08ac1faedae8b57ac508b73a1160",
+      "url": "https://api.github.com/repos/ipetkov/crane/tarball/v0.21.1",
+      "hash": "1ci6p7z9izshqbfg58bba6yvvhldgs4dk2gny6i5xh2z8xl5ckim"
     },
     "fenix": {
       "type": "Git",
@@ -23,15 +23,15 @@
         "repo": "fenix"
       },
       "branch": "main",
-      "revision": "7db16a01bca24b46acc1677f2b86ae03b5f207f8",
-      "url": "https://github.com/nix-community/fenix/archive/7db16a01bca24b46acc1677f2b86ae03b5f207f8.tar.gz",
-      "hash": "0ni6fw134ifvkd8vrgs6cm0818q7avcm9xijd1d7rrjpdq3svafy"
+      "revision": "8532b07ced6a95d57650124c79534a3c770431ab",
+      "url": "https://github.com/nix-community/fenix/archive/8532b07ced6a95d57650124c79534a3c770431ab.tar.gz",
+      "hash": "0m5q66xldsdfnja8p8sn1wlgnq8cvdgb3kvmd4xfsp91j0zl60gl"
     },
     "nixpkgs": {
       "type": "Channel",
       "name": "nixpkgs-unstable",
-      "url": "https://releases.nixos.org/nixpkgs/nixpkgs-25.05pre709559.5083ec887760/nixexprs.tar.xz",
-      "hash": "1z912j1lmrg8zp2hpmmi69dls9zlpvqfvdkvh5xc3x6iqkqwn0cd"
+      "url": "https://releases.nixos.org/nixpkgs/nixpkgs-25.11pre870318.dc704e6102e7/nixexprs.tar.xz",
+      "hash": "13b6n5k78cszp19k6rgsva8apbshvirrvysh12j4d1pdlwvif2k3"
     }
   },
   "version": 3

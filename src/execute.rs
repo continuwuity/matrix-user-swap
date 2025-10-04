@@ -2,13 +2,13 @@ use std::collections::HashSet;
 
 use impl_tools::autoimpl;
 use ruma::{
+    Int, OwnedRoomId,
     events::{
-        room::power_levels::RoomPowerLevelsEventContent,
         AnyGlobalAccountDataEventContent, GlobalAccountDataEventType,
         RoomAccountDataEventType,
+        room::power_levels::RoomPowerLevelsEventContent,
     },
     serde::Raw,
-    Int, OwnedRoomId,
 };
 use thiserror::Error;
 use tracing as t;
@@ -166,10 +166,10 @@ impl<S: ReadState + WriteState + 'static> ExecuteContext<'_, S> {
             self.new.join(&room.id).await.map_err(Error::Join)?;
         }
 
-        if let Some(power_level) = plan.power_level {
-            if let Err(error) = self.set_power_level(room, power_level).await {
-                self.error(Some(room.id.to_owned()), Error::PowerLevel(error));
-            }
+        if let Some(power_level) = plan.power_level
+            && let Err(error) = self.set_power_level(room, power_level).await
+        {
+            self.error(Some(room.id.to_owned()), Error::PowerLevel(error));
         }
 
         for (kind, content) in &plan.account_data {

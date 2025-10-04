@@ -1,4 +1,5 @@
 use ruma::{
+    OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomId, UserId,
     api::{
         self,
         client::{
@@ -8,6 +9,9 @@ use ruma::{
     },
     client,
     events::{
+        AnyGlobalAccountDataEventContent, AnyRoomAccountDataEventContent,
+        EmptyStateKey, GlobalAccountDataEventType, RoomAccountDataEventType,
+        StateEventType,
         room::{
             history_visibility::HistoryVisibility,
             join_rules::{JoinRule, RoomJoinRulesEventContent},
@@ -18,14 +22,10 @@ use ruma::{
             },
             server_acl::RoomServerAclEventContent,
         },
-        AnyGlobalAccountDataEventContent, AnyRoomAccountDataEventContent,
-        EmptyStateKey, GlobalAccountDataEventType, RoomAccountDataEventType,
-        StateEventType,
     },
     serde::Raw,
-    OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomId, UserId,
 };
-use serde::{de::DeserializeOwned, Deserialize};
+use serde::{Deserialize, de::DeserializeOwned};
 use thiserror::Error;
 
 use crate::{Client, RumaError};
@@ -273,7 +273,7 @@ impl ReadState for ClientStateAccessor {
             // key." is 404, but does not specify a errcode, so this
             // is the best we can do.
             Err(e) if e.error_kind() == Some(&ErrorKind::NotFound) => {
-                return Ok(None)
+                return Ok(None);
             }
             Err(client::Error::FromHttpResponse(
                 FromHttpResponseError::Server(e),
@@ -314,7 +314,7 @@ impl ReadState for ClientStateAccessor {
             // Spec mentions a 404 response, but doesn't specify errcode or
             // semantics. This is the best we can do.
             Err(e) if e.error_kind() == Some(&ErrorKind::NotFound) => {
-                return Ok(None)
+                return Ok(None);
             }
             Err(client::Error::FromHttpResponse(
                 FromHttpResponseError::Server(e),
@@ -349,7 +349,7 @@ impl ReadState for ClientStateAccessor {
             // Spec mentions a 404 response, but doesn't specify errcode or
             // semantics. This is the best we can do.
             Err(e) if e.error_kind() == Some(&ErrorKind::NotFound) => {
-                return Ok(None)
+                return Ok(None);
             }
             Err(client::Error::FromHttpResponse(
                 FromHttpResponseError::Server(e),

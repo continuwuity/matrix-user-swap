@@ -1,9 +1,9 @@
 use std::{
-    collections::{btree_map, BTreeMap},
+    collections::{BTreeMap, btree_map},
     fmt,
 };
 
-use ruma::{serde::Raw, OwnedRoomAliasId, OwnedRoomId};
+use ruma::{OwnedRoomAliasId, OwnedRoomId, serde::Raw};
 use serde::Serialize;
 #[cfg(test)]
 use serde_json::json;

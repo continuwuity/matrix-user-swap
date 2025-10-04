@@ -12,7 +12,7 @@ crane.overrideToolchain (
     fenix = import sources.fenix { pkgs = p; };
     stable = fenix.fromToolchainName {
       name = (pkgs.lib.importTOML ../rust-toolchain.toml).toolchain.channel;
-      sha256 = "sha256-yMuSb5eQPO/bHv+Bcf/US8LVMbf/G/0MSfiPwBhiPpk=";
+      sha256 = "sha256-SJwZ8g0zF2WrKDVmHrVG3pD2RGoQeo24MEXnNx5FyuI=";
     };
     nightly = fenix.latest;
   in

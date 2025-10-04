@@ -4,7 +4,10 @@ use std::{
 };
 
 use ruma::{
+    Int, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomId,
     events::{
+        AnyGlobalAccountDataEventContent, AnyRoomAccountDataEventContent,
+        GlobalAccountDataEventType, RoomAccountDataEventType,
         direct::DirectEventContent,
         ignored_user_list::IgnoredUserListEventContent,
         room::{
@@ -12,20 +15,17 @@ use ruma::{
             member::MembershipState, power_levels::RoomPowerLevels,
         },
         tag::TagEventContent,
-        AnyGlobalAccountDataEventContent, AnyRoomAccountDataEventContent,
-        GlobalAccountDataEventType, RoomAccountDataEventType,
     },
     serde::Raw,
-    Int, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomId,
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing as t;
 
 use crate::{
-    state::ReadState,
-    utils::{merge_json, JsonMap, JsonMergeError},
     UserKind,
+    state::ReadState,
+    utils::{JsonMap, JsonMergeError, merge_json},
 };
 
 fn is_default<T: Default + Eq>(value: &T) -> bool {
@@ -482,10 +482,10 @@ impl<S: ReadState> MakePlanState<'_, S> {
             .await
             .map_err(Error::GetServerAcl)?;
 
-        if let Some(server_acl) = server_acl {
-            if !server_acl.is_allowed(self.new_user_id.server_name()) {
-                return Err(Error::AclBanned);
-            }
+        if let Some(server_acl) = server_acl
+            && !server_acl.is_allowed(self.new_user_id.server_name())
+        {
+            return Err(Error::AclBanned);
         }
 
         let invited = membership == MembershipState::Invite;
