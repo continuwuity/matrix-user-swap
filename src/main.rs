@@ -19,12 +19,14 @@ use wee_woo::ErrorExt;
 
 mod execute;
 mod plan;
+mod rate_limit;
 mod state;
 mod utils;
 
 use crate::{
     execute::{ExecuteError, execute_plan},
     plan::{FatalPlanError, Plan, PlanSettings, make_plan},
+    rate_limit::RateLimitedClient,
     state::{ClientReadStateError, ClientStateAccessor},
     utils::RoomIdentity,
 };
@@ -313,7 +315,10 @@ fn print_warnings() {
     );
 }
 
-async fn try_log_out(kind: UserKind, client: &Client) -> Result<(), RumaError> {
+async fn try_log_out(
+    kind: UserKind,
+    client: &RateLimitedClient,
+) -> Result<(), RumaError> {
     let request = api::client::session::logout::v3::Request::new();
     client.send_request(request).await.inspect_err(|error| {
         t::error!(?error, "Failed to log out session for {kind} user");
@@ -360,6 +365,7 @@ async fn init_client(
             .map_err(|e| Error::LogIn(kind, e))?;
     }
 
+    let client = RateLimitedClient::new(client);
     match ClientStateAccessor::new(client).await {
         Ok(client_state) => Ok((client_state, new_session)),
         Err((error, client)) => {

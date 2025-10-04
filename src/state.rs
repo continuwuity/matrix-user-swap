@@ -28,7 +28,7 @@ use ruma::{
 use serde::{Deserialize, de::DeserializeOwned};
 use thiserror::Error;
 
-use crate::{Client, RumaError};
+use crate::{RumaError, rate_limit::RateLimitedClient};
 
 #[cfg(test)]
 pub(crate) mod mock;
@@ -221,14 +221,15 @@ pub(crate) enum ClientReadStateError {
 
 #[derive(Debug)]
 pub(crate) struct ClientStateAccessor {
-    client: Client,
+    client: RateLimitedClient,
     user_id: OwnedUserId,
 }
 
 impl ClientStateAccessor {
     pub(crate) async fn new(
-        client: Client,
-    ) -> Result<ClientStateAccessor, (ClientReadStateError, Client)> {
+        client: RateLimitedClient,
+    ) -> Result<ClientStateAccessor, (ClientReadStateError, RateLimitedClient)>
+    {
         let request = api::client::account::whoami::v3::Request::new();
         match client.send_request(request).await {
             Ok(response) => Ok(ClientStateAccessor {
@@ -239,7 +240,7 @@ impl ClientStateAccessor {
         }
     }
 
-    pub(crate) fn into_inner(self) -> Client {
+    pub(crate) fn into_inner(self) -> RateLimitedClient {
         self.client
     }
 }
