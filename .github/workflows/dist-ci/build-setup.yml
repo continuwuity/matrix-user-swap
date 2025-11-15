@@ -28,11 +28,3 @@
                         ~/.cargo/registry
                         !~/.cargo/registry/src
     key: rust-registry-${{hashFiles('**/Cargo.lock') }}
-
-# JS build
-- uses: pnpm/action-setup@v4
-  name: Set up pnpm
-- run: pnpm i --frozen-lockfile
-  name: Install npm dependencies
-- run: pnpm run build
-  name: Build JS project
