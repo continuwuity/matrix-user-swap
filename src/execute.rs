@@ -239,12 +239,15 @@ impl<S: ReadState + WriteState + 'static> ExecuteContext<'_, S> {
 
         t::info!("Copying old user's power level ({power_level}) to new user");
 
+        // Note: If power_level is Int::MAX, this may be an approximation for a room creator
+        // (see plan_power_level() for details on creator handling in room version 12+).
         let power_levels =
             self.old.get_power_levels(&room.id).await.map_err(Error::Read)?;
-        let mut power_levels = RoomPowerLevelsEventContent::from(power_levels);
-        power_levels.users.insert(self.plan.new_user_id.clone(), power_level);
+        let mut power_levels_content = RoomPowerLevelsEventContent::try_from(power_levels)
+            .expect("power levels conversion should succeed");
+        power_levels_content.users.insert(self.plan.new_user_id.clone(), power_level);
         self.old
-            .set_power_levels(&room.id, &power_levels)
+            .set_power_levels(&room.id, &power_levels_content)
             .await
             .map_err(Error::Write)?;
 

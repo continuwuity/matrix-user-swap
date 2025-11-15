@@ -9,12 +9,12 @@ use ruma::{
         },
         error::FromHttpResponseError,
     },
-    client,
     events::{
         AnyGlobalAccountDataEventContent, AnyRoomAccountDataEventContent,
         EmptyStateKey, GlobalAccountDataEventType, RoomAccountDataEventType,
         StateEventType,
         room::{
+            create::RoomCreateEventContent,
             history_visibility::HistoryVisibility,
             join_rules::{JoinRule, RoomJoinRulesEventContent},
             member::MembershipState,
@@ -27,6 +27,7 @@ use ruma::{
     },
     serde::Raw,
 };
+use ruma_client as client;
 use serde::{Deserialize, de::DeserializeOwned};
 use thiserror::Error;
 
@@ -97,12 +98,80 @@ pub(crate) trait ReadState {
         Ok(extract.map(|extract| extract.membership))
     }
 
+    async fn get_room_version(
+        &self,
+        room_id: &RoomId,
+    ) -> Result<Option<String>, Self::Error> {
+        #[derive(Deserialize)]
+        struct Extract {
+            room_version: Option<String>,
+        }
+        let extract = self
+            .get_state_event::<Extract>(
+                room_id,
+                StateEventType::RoomCreate,
+                "".to_owned(),
+            )
+            .await?;
+        Ok(extract.and_then(|e| e.room_version))
+    }
+
+    /// Get the list of room creators for a room.
+    /// 
+    /// Room creators have infinite power level ONLY in room version 12 and later.
+    /// In earlier room versions, creators are just regular users and their power
+    /// level is determined by the m.room.power_levels event.
+    /// 
+    /// In room versions 1-10, there is a single creator field.
+    /// In room version 11, the creator field is deprecated in favor of using the
+    /// m.room.create event's sender.
+    /// In room version 12+, additional_creators can specify multiple creators,
+    /// all of whom have infinite power level.
+    /// 
+    /// Returns an empty vector if the room create event is not found or has no creators.
+    async fn get_room_creators(
+        &self,
+        room_id: &RoomId,
+    ) -> Result<Vec<OwnedUserId>, Self::Error> {
+        let create_event = self
+            .get_state_event::<RoomCreateEventContent>(
+                room_id,
+                StateEventType::RoomCreate,
+                "".to_owned(),
+            )
+            .await?;
+        
+        if let Some(create) = create_event {
+            let mut creators = Vec::new();
+            
+            // Add the original creator (deprecated in room version 11+)
+            #[allow(deprecated)]
+            if let Some(creator) = create.creator {
+                creators.push(creator);
+            }
+            
+            // Add any additional creators from room version 11+
+            if !create.additional_creators.is_empty() {
+                creators.extend(create.additional_creators);
+            }
+            
+            Ok(creators)
+        } else {
+            Ok(Vec::new())
+        }
+    }
+
     async fn get_power_levels(
         &self,
         room_id: &RoomId,
     ) -> Result<RoomPowerLevels, Self::Error> {
         // We only care about the keys that are preserved on redaction, so just
         // deserialize to the redacted type. Redactable fields will be dropped.
+        // 
+        // This method also retrieves room creators and the room version to properly
+        // construct RoomPowerLevels with the correct authorization rules. 
+        // Note: Room creators only have infinite power level in room version 12+.
+        // In earlier versions, they are just regular users.
         let content = self
             .get_state_event::<RedactedRoomPowerLevelsEventContent>(
                 room_id,
@@ -110,11 +179,22 @@ pub(crate) trait ReadState {
                 "".to_owned(),
             )
             .await?;
-        if let Some(content) = content {
-            Ok(content.into())
-        } else {
-            Ok(RoomPowerLevelsEventContent::default().into())
-        }
+        
+        // Get room creators for proper power level handling
+        let creators = self.get_room_creators(room_id).await.unwrap_or_default();
+        
+        // Get room version to determine which authorization rules to use
+        let room_version = self.get_room_version(room_id).await.unwrap_or_default();
+        let rules = get_authorization_rules(room_version.as_deref());
+        
+        // Use RoomPowerLevelsSource to convert from the redacted content
+        use ruma::events::room::power_levels::RoomPowerLevelsSource;
+        let source = RoomPowerLevelsSource::from(content);
+        Ok(RoomPowerLevels::new(
+            source,
+            rules,
+            creators,
+        ))
     }
 
     async fn get_join_rule(
@@ -170,6 +250,23 @@ pub(crate) trait ReadState {
         &self,
         room_id: &RoomId,
     ) -> Result<(), Self::Error>;
+}
+
+/// Get the appropriate authorization rules for a room version.
+/// Returns V11 rules as the default for unknown versions.
+fn get_authorization_rules(room_version: Option<&str>) -> &'static ruma::room_version_rules::AuthorizationRules {
+    use ruma::room_version_rules::AuthorizationRules;
+    match room_version {
+        Some("1") | Some("2") => &AuthorizationRules::V1,
+        Some("3") | Some("4") | Some("5") => &AuthorizationRules::V3,
+        Some("6") => &AuthorizationRules::V6,
+        Some("7") => &AuthorizationRules::V7,
+        Some("8") | Some("9") => &AuthorizationRules::V8,
+        Some("10") => &AuthorizationRules::V10,
+        Some("11") => &AuthorizationRules::V11,
+        Some("12") => &AuthorizationRules::V12,
+        _ => &AuthorizationRules::V11, // Default for unknown versions
+    }
 }
 
 pub(crate) trait WriteState {
@@ -271,7 +368,7 @@ impl ReadState for ClientStateAccessor {
         use ClientReadStateError as Error;
 
         let request =
-            api::client::state::get_state_events_for_key::v3::Request::new(
+            api::client::state::get_state_event_for_key::v3::Request::new(
                 room_id.to_owned(),
                 kind.clone(),
                 state_key,
@@ -283,7 +380,7 @@ impl ReadState for ClientStateAccessor {
             // Spec says that "The room has no state with the given type or
             // key." is 404, but does not specify a errcode, so this
             // is the best we can do.
-            Err(e) if e.error_kind() == Some(&ErrorKind::NotFound) => {
+            Err(err) if err.error_kind() == Some(&ErrorKind::NotFound) => {
                 return Ok(None);
             }
             Err(client::Error::FromHttpResponse(
@@ -292,9 +389,8 @@ impl ReadState for ClientStateAccessor {
             Err(e) => return Err(e.into()),
         };
 
-        let content = response
-            .content
-            .deserialize_as::<T>()
+        let content = Raw::from_json(response.event_or_content)
+            .deserialize()
             .map_err(|e| Error::StateEventDeserialize(kind, e))?;
         Ok(Some(content))
     }
@@ -324,7 +420,7 @@ impl ReadState for ClientStateAccessor {
             Ok(response) => response,
             // Spec mentions a 404 response, but doesn't specify errcode or
             // semantics. This is the best we can do.
-            Err(e) if e.error_kind() == Some(&ErrorKind::NotFound) => {
+            Err(err) if err.error_kind() == Some(&ErrorKind::NotFound) => {
                 return Ok(None);
             }
             Err(client::Error::FromHttpResponse(
@@ -333,9 +429,9 @@ impl ReadState for ClientStateAccessor {
             Err(e) => return Err(e.into()),
         };
 
-        let content = response
-            .account_data
-            .deserialize_as::<T>()
+        // Deserialize the Raw<AnyGlobalAccountDataEventContent> by converting through JSON
+        let json_value = response.account_data.json();
+        let content: T = serde_json::from_str(json_value.get())
             .map_err(|e| Error::GlobalAccountDataEventDeserialize(kind, e))?;
         Ok(Some(content))
     }
@@ -359,7 +455,7 @@ impl ReadState for ClientStateAccessor {
             Ok(response) => response,
             // Spec mentions a 404 response, but doesn't specify errcode or
             // semantics. This is the best we can do.
-            Err(e) if e.error_kind() == Some(&ErrorKind::NotFound) => {
+            Err(err) if err.error_kind() == Some(&ErrorKind::NotFound) => {
                 return Ok(None);
             }
             Err(client::Error::FromHttpResponse(
@@ -368,9 +464,9 @@ impl ReadState for ClientStateAccessor {
             Err(e) => return Err(e.into()),
         };
 
-        let content = response
-            .account_data
-            .deserialize_as::<T>()
+        // Deserialize the Raw<AnyRoomAccountDataEventContent> by converting through JSON
+        let json_value = response.account_data.json();
+        let content: T = serde_json::from_str(json_value.get())
             .map_err(|e| Error::RoomAccountDataEventDeserialize(kind, e))?;
         Ok(Some(content))
     }

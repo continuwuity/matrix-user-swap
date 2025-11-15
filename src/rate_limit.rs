@@ -15,6 +15,7 @@ use tokio::{
 };
 use tracing as t;
 
+
 use crate::{Client, RumaError};
 
 /// Default period to wait between non-rate-limited requests.
@@ -90,7 +91,7 @@ impl RateLimitedClient {
                 tokio::time::sleep_until(next_request).await;
             }
 
-            let response = self.inner.send_request(request.clone()).await;
+            let response: Result<R::IncomingResponse, RumaError> = self.inner.send_request(request.clone()).await;
             let now = Instant::now();
             if let Err(error) = &response
                 && let Some(ErrorKind::LimitExceeded {

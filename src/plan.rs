@@ -203,6 +203,14 @@ pub(crate) enum RoomPlanError<S: ReadState> {
     },
 
     #[error(
+        "old user is a room creator with infinite power level (room version 12+). \
+         Room creators cannot be changed or transferred. Setting new user's power level \
+         to the maximum representable value ({}) as the closest approximation.",
+        Int::MAX
+    )]
+    CreatorPowerLevelApproximation,
+
+    #[error(
         "failed to get history visibility state. Unable to determine whether \
          message history visible to the old user in this room may be hidden \
          from the new user and lost if the old user leaves."
@@ -447,17 +455,43 @@ impl<S: ReadState> MakePlanState<'_, S> {
         power_levels: &RoomPowerLevels,
         errors: &mut Vec<RoomPlanError<S>>,
     ) -> Option<Int> {
+        use ruma::events::room::power_levels::UserPowerLevel;
+        
         let old_power_level = power_levels.for_user(&self.old_user_id);
         let new_power_level = power_levels.for_user(&self.new_user_id);
+        
+        // Extract integer value from power level, treating Infinite as Int::MAX
+        // Note: UserPowerLevel::Infinite only occurs in room version 12+ for room creators.
+        let old_level_int = match old_power_level {
+            UserPowerLevel::Int(level) => level,
+            UserPowerLevel::Infinite => {
+                // Room creators have infinite power level and cannot be transferred.
+                // Set to Int::MAX (the highest representable power level) as an approximation.
+                errors.push(RoomPlanError::CreatorPowerLevelApproximation);
+                Int::MAX
+            }
+            _ => {
+                // Future-proofing: handle any future variants added to UserPowerLevel
+                errors.push(RoomPlanError::CreatorPowerLevelApproximation);
+                Int::MAX
+            }
+        };
+        
+        // Check if new user is already a creator with infinite power level (room version 12+)
+        if matches!(new_power_level, UserPowerLevel::Infinite) {
+            // New user is already a creator, no need to set power level
+            return None;
+        }
+        
         if new_power_level < old_power_level {
             if power_levels.user_can_change_user_power_level(
                 &self.old_user_id,
                 &self.new_user_id,
             ) {
-                Some(old_power_level)
+                Some(old_level_int)
             } else {
                 errors.push(RoomPlanError::CopyPowerLevel {
-                    old_power_level,
+                    old_power_level: old_level_int,
                 });
                 None
             }
@@ -582,11 +616,11 @@ impl<S: ReadState> MakePlanState<'_, S> {
             merge_errors.into_iter().map(RoomPlanError::RoomTagMerge);
         errors.extend(merge_errors);
         let merged = merged.map(|merged| {
-            Raw::new(&Content {
+            let content = Content {
                 tags: merged,
-            })
-            .expect("serialization should always succeed")
-            .cast()
+            };
+            let json_string = serde_json::to_string(&content).expect("serialization should always succeed");
+            Raw::from_json(serde_json::value::RawValue::from_string(json_string).expect("serialization should always succeed"))
         });
 
         Ok(merged)
@@ -756,9 +790,8 @@ impl<S: ReadState> MakePlanState<'_, S> {
             .errors
             .extend(errors.into_iter().map(PlanError::IgnoredUserMerge));
         let merged = merged.map(|merged| {
-            Raw::new(&merged)
-                .expect("serialization should always succeed")
-                .cast()
+            let json_string = serde_json::to_string(&merged).expect("serialization should always succeed");
+            Raw::from_json(serde_json::value::RawValue::from_string(json_string).expect("serialization should always succeed"))
         });
 
         Ok(merged)

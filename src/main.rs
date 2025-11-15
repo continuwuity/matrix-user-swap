@@ -3,13 +3,13 @@ use std::{borrow::Cow, mem, process::ExitCode};
 use clap::{Args, Parser};
 use derive_more::Display;
 use dialoguer::Confirm;
-use rand::{Rng, thread_rng};
+use rand::Rng;
 use ruma::{
     OwnedRoomAliasId, OwnedRoomId, RoomAliasId, RoomId, api,
-    client::{self, HttpClient},
     events::RoomAccountDataEventType,
     server_name,
 };
+use ruma_client::{self as client, http_client::HttpClient};
 use serde::Serialize;
 use thiserror::Error;
 use tracing as t;
@@ -99,7 +99,7 @@ struct Cli {
 pub(crate) type Client = client::Client<client::http_client::Reqwest>;
 pub(crate) type ReqwestError =
     <client::http_client::Reqwest as HttpClient>::Error;
-pub(crate) type RumaError = client::Error<ReqwestError, api::client::Error>;
+pub(crate) type RumaError = client::Error<ReqwestError, ruma::api::client::Error>;
 
 #[derive(Error, Debug)]
 enum Error {
@@ -157,16 +157,14 @@ fn init_logging() -> Result<(), InitLoggingError> {
 }
 
 fn anonymize_room_id(room_id: &RoomId) -> OwnedRoomId {
-    let server_name = room_id
-        .server_name()
-        .unwrap_or(server_name!("invalid-server-name.com"));
-    RoomId::new(server_name)
+    let server_name = room_id.server_name().unwrap_or_else(|| server_name!("invalid-server-name.com"));
+    RoomId::parse(format!("!anonymized:{}", server_name)).expect("room ID should be valid")
 }
 
 fn anonymize_room_alias(room_alias: &RoomAliasId) -> OwnedRoomAliasId {
     let alias = format!(
         "#alias-{}:{}",
-        thread_rng().gen_range(0u32..1024),
+        rand::rng().random_range(0u32..1024),
         room_alias.server_name()
     );
     RoomAliasId::parse(&alias)

@@ -201,7 +201,7 @@ impl ReadState for MockStateAccessor<'_> {
         &self,
         room_id: &RoomId,
     ) -> Result<(), Self::Error> {
-        let membership = self.get_membership(room_id, &user_id).await?;
+        let membership = self.get_membership(room_id, &self.user().user_id).await?;
         // We don't actually need to wait for anything. There is no mechanism
         // to change the state, so if the user isn't already invited they never
         // will be.
