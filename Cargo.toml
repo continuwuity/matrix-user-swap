@@ -4,6 +4,17 @@ version = "0.1.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 
+description = "A Matrix account migration tool."
+authors = ["Jade Ellis <jade@ellis.link>"]
+homepage = "https://forgejo.ellis.link/continuwuation/matrix-user-swap"
+repository = "https://github.com/continuwuity/matrix-user-swap"
+
+[package.metadata.wix]
+upgrade-guid = "9EC96776-1392-4BF2-8F0F-DCD2DCAAD8FD"
+path-guid = "1C68844A-B115-4FD6-A17A-C067CB471523"
+license = false
+eula = false
+
 # Keep alphabetically sorted
 [workspace.lints.rust]
 elided_lifetimes_in_paths = "warn"
@@ -95,3 +106,8 @@ wee-woo = "0.1.0"
 [dev-dependencies]
 insta = { version = "1.41.1", features = ["glob", "json"] }
 serde_json5 = "0.1.0"
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
